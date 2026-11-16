@@ -1,0 +1,782 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#10231f">
+<title>Carnet de prospection</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;800&family=Newsreader:ital,opsz,wght@1,6..72,400;1,6..72,500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+/* Concept : la carte est le terrain, le carnet se pose dessus. Ordinateur : carnet à gauche. Téléphone : carnet en tiroir bas.
+   Couleurs tirées de la salamandre tachetée : encre vert-noir, jaune vif pour ce qui est sélectionné. */
+:root{
+  --bg:#eef2f0; --panel:#ffffff; --raised:#f5f8f6; --ink:#10231f; --muted:#5a6d67; --line:#d9e2de;
+  --primary:#0e5c4d; --on-primary:#ffffff; --tint:#e2efea;
+  --sun:#f5c518; --on-sun:#1a1a05;
+  --precise:#0e7a63; --vague:#7a5cc2; --danger:#b3372f;
+  --shadow:0 10px 30px rgba(16,35,31,.16);
+  --f-ui:"Schibsted Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-latin:"Newsreader",Georgia,"Times New Roman",serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  --peek:112px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0b1412; --panel:#111d1a; --raised:#172622; --ink:#e4ede9; --muted:#8da19a; --line:#263833;
+  --primary:#3fcfa8; --on-primary:#05241b; --tint:#17302a;
+  --precise:#3fcfa8; --vague:#a993ee; --danger:#f08a80;
+  --shadow:0 10px 30px rgba(0,0,0,.5);
+  color-scheme:dark;}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.45 var(--f-ui);overflow:hidden;-webkit-tap-highlight-color:transparent}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.latin{font-family:var(--f-latin);font-style:italic;font-size:1.04em}
+[hidden]{display:none!important}
+
+#app{height:100%;display:grid;grid-template-columns:430px 1fr}
+#map{grid-column:2;grid-row:1;min-width:0;background:var(--bg);z-index:0}
+#sheet{grid-column:1;grid-row:1;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;z-index:2}
+#grip{display:none}
+
+/* En-tête */
+.head{display:flex;align-items:center;gap:10px;padding:14px 16px 8px}
+.logo{flex:none;width:34px;height:34px;border-radius:10px;background:#10231f}
+.head h1{font:800 19px/1.1 var(--f-ui);margin:0;letter-spacing:-.01em}
+.head .sum{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.head>div{min-width:0;flex:1}
+.icon{flex:none;width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--panel);display:grid;place-items:center}
+.icon:hover{background:var(--tint)}
+.icon svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tabs{display:flex;gap:4px;padding:0 16px;border-bottom:1px solid var(--line)}
+.tabs button{border:0;background:none;padding:9px 12px 10px;font-weight:600;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-1px}
+.tabs button[aria-selected=true]{color:var(--ink);border-color:var(--sun)}
+.tabs .cnt{font:500 12px var(--f-mono);background:var(--tint);border-radius:20px;padding:1px 7px;margin-left:4px}
+#bar{height:3px;background:transparent;overflow:hidden}
+#bar.on::before{content:"";display:block;height:100%;width:35%;background:var(--sun);animation:slide 1.1s ease-in-out infinite}
+@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}
+.view{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:14px 16px calc(18px + env(safe-area-inset-bottom,0px))}
+
+/* Formulaire */
+.field{margin-bottom:16px}
+.lab{display:flex;justify-content:space-between;align-items:baseline;font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600;margin-bottom:6px}
+.lab small{text-transform:none;letter-spacing:0;font-weight:400;font-size:12px}
+.inp{width:100%;min-height:42px;padding:8px 11px;border:1px solid var(--line);border-radius:10px;background:var(--raised)}
+.rowx{display:flex;gap:8px;align-items:center}
+.rowx>.grow{flex:1;min-width:0}
+.ac{position:relative}
+.sugg{position:absolute;z-index:1200;left:0;right:0;top:calc(100% + 4px);background:var(--panel);border:1px solid var(--line);border-radius:10px;margin:0;padding:4px;list-style:none;box-shadow:var(--shadow);max-height:260px;overflow:auto}
+.sugg li{padding:8px 9px;border-radius:7px;cursor:pointer}
+.sugg li:hover{background:var(--tint)}
+.sugg small{color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:var(--raised);border-radius:20px;padding:6px 12px;font-size:13.5px;min-height:34px;display:inline-flex;align-items:center;gap:6px}
+.chip[aria-pressed=true]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.chip.sunny[aria-pressed=true]{background:var(--sun);color:var(--on-sun);border-color:var(--sun)}
+.chip .x{opacity:.6;font-size:15px;line-height:1}
+.months .chip{padding:6px 0;width:calc((100% - 66px)/12);justify-content:center;font-family:var(--f-mono);font-size:12.5px;min-width:26px}
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:3px;gap:3px}
+.seg button{border:0;background:none;border-radius:8px;padding:8px 6px;font-weight:500;font-size:14px}
+.seg button[aria-pressed=true]{background:var(--panel);box-shadow:0 1px 3px rgba(0,0,0,.14);font-weight:600}
+input[type=range]{width:100%;accent-color:var(--primary);height:28px}
+.hint{font-size:12.5px;color:var(--muted);margin-top:6px}
+.checks{display:flex;flex-wrap:wrap;gap:8px 16px}
+.checks label{display:flex;gap:7px;align-items:center;min-height:30px;cursor:pointer}
+.checks input{width:17px;height:17px;accent-color:var(--primary)}
+.cta{position:sticky;bottom:-18px;margin:0 -16px -18px;padding:10px 16px calc(14px + env(safe-area-inset-bottom,0px));background:linear-gradient(transparent,var(--panel) 28%)}
+.btn{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:9px 13px;min-height:42px;font-weight:500}
+.btn:hover{background:var(--tint)}
+.btn.primary{background:var(--primary);color:var(--on-primary);border-color:var(--primary);font-weight:700;width:100%;font-size:16px;min-height:48px}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn:disabled{opacity:.5;cursor:default}
+details.more{border-top:1px solid var(--line);padding-top:12px;font-size:13.5px;color:var(--muted)}
+details.more summary{cursor:pointer;font-weight:600;color:var(--ink)}
+details.more a,.detail a{color:var(--primary)}
+details.more ul{margin:8px 0 0;padding-left:18px}
+
+/* Liste d'espèces */
+.tools{display:grid;gap:8px;margin-bottom:10px}
+.status{font-size:13px;color:var(--muted)}
+.status b{color:var(--ink)}
+.warn{color:var(--danger)}
+.key{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--muted)}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px;background:var(--precise)}
+.dot.v{background:transparent;border:2px solid var(--vague)}
+.dot.s{background:var(--sun);border:1.5px solid #1a1a05}
+.sp{display:grid;grid-template-columns:52px 1fr auto;gap:2px 12px;align-items:center;padding:8px;border-radius:12px;width:100%;text-align:left;border:1px solid transparent;background:none}
+.sp:hover{background:var(--raised)}
+.sp .ph{grid-row:1/3;width:52px;height:52px;border-radius:10px;background:var(--tint) center/cover;display:grid;place-items:center;font:800 17px var(--f-ui);color:var(--primary)}
+.sp .nm{font-weight:600;line-height:1.2}
+.sp .n{font:500 15px var(--f-mono);text-align:right}
+.sp .n small{display:block;font-size:10.5px;color:var(--muted)}
+.sp .meta{grid-column:2/4;display:flex;flex-wrap:wrap;gap:5px;align-items:center;font-size:12px;color:var(--muted)}
+.tag{background:var(--tint);border-radius:5px;padding:0 6px;font:500 11px/18px var(--f-mono);color:var(--ink)}
+.tag.v{color:var(--vague)} .tag.r{background:var(--danger);color:#fff}
+.tag.t{background:var(--sun);color:var(--on-sun)}
+.empty{color:var(--muted);padding:26px 8px;text-align:center}
+.empty b{display:block;color:var(--ink);font-size:16px;margin-bottom:4px}
+
+/* Fiche espèce */
+.detail .back{border:0;background:none;padding:6px 0;color:var(--primary);font-weight:600;margin-bottom:6px}
+.hero{display:grid;grid-template-columns:112px 1fr;gap:14px;align-items:start}
+.hero .ph{width:112px;height:112px;border-radius:14px;background:var(--tint) center/cover}
+.hero h2{font:800 23px/1.1 var(--f-ui);margin:0 0 2px;letter-spacing:-.01em;text-wrap:balance}
+.hero .latin{font-size:17px;color:var(--muted)}
+.credit{font-size:10.5px;color:var(--muted);margin-top:4px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0}
+.stat{background:var(--raised);border-radius:10px;padding:8px 10px}
+.stat b{display:block;font:500 17px var(--f-mono)}
+.stat span{font-size:11.5px;color:var(--muted)}
+.detail h3{font:600 12px var(--f-ui);text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:18px 0 8px}
+.pheno{display:grid;grid-template-columns:repeat(12,1fr);gap:4px;align-items:end;height:92px}
+.pheno div{position:relative;background:var(--tint);border-radius:4px 4px 0 0;min-height:2px}
+.pheno div.hi{background:var(--sun)}
+.pheno div b{position:absolute;top:-16px;left:0;right:0;text-align:center;font:500 10.5px var(--f-mono);color:var(--muted)}
+.phl{display:grid;grid-template-columns:repeat(12,1fr);gap:4px;font:400 11px var(--f-mono);color:var(--muted);text-align:center;margin-top:3px}
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.acts .btn[aria-pressed=true]{background:var(--sun);border-color:var(--sun);color:var(--on-sun);font-weight:600}
+.desc{font-size:14px;color:var(--muted)}
+.obs{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;width:100%;text-align:left;border:0;border-top:1px solid var(--line);background:none;padding:9px 2px;font-size:13.5px}
+.obs:hover{background:var(--raised)}
+.obs .src{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* Carte */
+.leaflet-container{font-family:var(--f-ui)}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--panel);color:var(--ink);border-radius:12px}
+.leaflet-popup-content{font:13.5px/1.4 var(--f-ui);margin:12px 14px}
+.leaflet-popup-content a{color:var(--primary)}
+.leaflet-popup-content img{width:100%;max-height:130px;object-fit:cover;border-radius:8px;margin-bottom:6px;display:block}
+.leaflet-control-layers,.leaflet-bar{border:0!important;box-shadow:var(--shadow)!important;border-radius:10px!important;overflow:hidden}
+.leaflet-control-layers-expanded{background:var(--panel);color:var(--ink);padding:10px 12px;font-size:13.5px;max-height:60vh;overflow:auto}
+.leaflet-bar a{background:var(--panel)!important;color:var(--ink)!important;width:38px!important;height:38px!important;line-height:38px!important;border-color:var(--line)!important}
+.locbtn svg{width:18px;height:18px;margin-top:10px;stroke:currentColor;fill:none;stroke-width:2}
+.locbtn.on{color:#1d6fe0!important}
+#here{position:absolute;z-index:500;top:14px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--panel);border:0;border-radius:24px;padding:10px 18px;font-weight:600;box-shadow:var(--shadow)}
+.mapwrap{grid-column:2;grid-row:1;position:relative;min-width:0;pointer-events:none}
+.mapwrap>*{pointer-events:auto}
+#toast{position:fixed;z-index:3000;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--panel);padding:10px 16px;border-radius:10px;box-shadow:var(--shadow);max-width:90vw;font-size:14px}
+.menu{position:absolute;z-index:1300;right:16px;top:58px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:5px;display:grid;min-width:230px}
+.menu button{border:0;background:none;text-align:left;padding:10px 12px;border-radius:8px}
+.menu button:hover{background:var(--tint)}
+.menu button:disabled{opacity:.45}
+
+/* Téléphone et tablette étroite : carte plein écran, carnet en tiroir */
+@media (max-width:860px){
+  #app{display:block}
+  #map{position:fixed;inset:0}
+  .mapwrap{position:fixed;inset:0}
+  #sheet{position:fixed;left:0;right:0;bottom:0;height:52dvh;border-right:0;border-radius:18px 18px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.22);transition:height .28s cubic-bezier(.2,.8,.2,1);max-width:640px;margin:0 auto}
+  #sheet.drag{transition:none}
+  #grip{display:block;padding:9px 0 3px;touch-action:none;cursor:grab}
+  #grip span{display:block;width:44px;height:5px;border-radius:5px;background:var(--line);margin:0 auto}
+  .head{padding-top:4px;touch-action:none}
+  .inp{font-size:16px}
+  .leaflet-bottom{bottom:var(--peek)}
+  .leaflet-top.leaflet-right{top:env(safe-area-inset-top,0px)}
+  #toast{bottom:calc(var(--peek) + 16px)}
+  .menu{top:auto;bottom:calc(100% - 64px);position:absolute}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation-duration:.01s!important}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="map" role="region" aria-label="Carte des observations"></div>
+  <div class="mapwrap"><button id="here" hidden>Chercher dans cette zone</button></div>
+
+  <section id="sheet" data-state="half" aria-label="Carnet">
+    <div id="grip" aria-hidden="true"><span></span></div>
+    <div class="head" id="head">
+      <svg class="logo" viewBox="0 0 34 34" aria-hidden="true"><ellipse cx="11" cy="11" rx="5" ry="3.6" fill="#f5c518" transform="rotate(-25 11 11)"/><ellipse cx="23" cy="15" rx="4" ry="5.4" fill="#f5c518" transform="rotate(20 23 15)"/><ellipse cx="12.5" cy="23.5" rx="5.6" ry="3.4" fill="#f5c518" transform="rotate(15 12.5 23.5)"/><circle cx="25" cy="26" r="2.2" fill="#f5c518"/></svg>
+      <div><h1>Carnet de prospection</h1><div class="sum" id="sum">Quelles espèces autour de moi ?</div></div>
+      <button class="icon" id="menuBtn" aria-label="Exporter et partager" aria-haspopup="true"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg></button>
+    </div>
+    <div class="menu" id="menu" hidden>
+      <button data-act="link">Copier le lien de cette recherche</button>
+      <button data-act="csv" class="needdata">Tableau CSV (Excel)</button>
+      <button data-act="gpx" class="needdata">Points GPX (GPS, appli de rando)</button>
+      <button data-act="geojson" class="needdata">GeoJSON (QGIS)</button>
+    </div>
+    <div class="tabs" role="tablist">
+      <button role="tab" id="t-search" aria-selected="true">Recherche</button>
+      <button role="tab" id="t-list" aria-selected="false">Espèces <span class="cnt" id="cnt" hidden></span></button>
+    </div>
+    <div id="bar"></div>
+
+    <!-- Recherche -->
+    <div class="view" id="v-search">
+      <div class="field">
+        <div class="lab">Zone</div>
+        <div class="seg" id="zone">
+          <button type="button" data-z="radius" aria-pressed="true">Autour d'un lieu</button>
+          <button type="button" data-z="view" aria-pressed="false">Vue de la carte</button>
+          <button type="button" data-z="france" aria-pressed="false">France entière</button>
+        </div>
+        <div class="hint" id="zhint" hidden></div>
+      </div>
+      <div id="placeBox">
+        <div class="field ac">
+          <div class="lab">Lieu <small>ou touche la carte</small></div>
+          <div class="rowx">
+            <input class="inp grow" type="text" id="q" placeholder="Commune, lieu-dit, adresse…" autocomplete="off" aria-label="Lieu">
+            <button type="button" class="icon" id="gps" aria-label="Utiliser ma position" title="Ma position"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button>
+            <button type="button" class="icon" id="fav" aria-label="Enregistrer ce lieu" title="Enregistrer ce lieu"><svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8L3.5 9.7l5.9-.8z"/></svg></button>
+          </div>
+          <ul class="sugg" id="qs" hidden role="listbox"></ul>
+          <div class="chips" id="places" style="margin-top:8px"></div>
+        </div>
+        <div class="field">
+          <div class="lab">Rayon <span class="mono" id="rlab">10 km</span></div>
+          <input type="range" id="radius" min="1" max="50" value="10" aria-label="Rayon en kilomètres">
+        </div>
+      </div>
+      <div class="field ac">
+        <div class="lab">Quoi chercher <small>plusieurs choix possibles</small></div>
+        <div class="chips" id="groups"></div>
+        <input class="inp" type="text" id="tax" placeholder="Ajouter une espèce, un genre, une famille…" autocomplete="off" aria-label="Ajouter un taxon" style="margin-top:8px">
+        <ul class="sugg" id="ts" hidden role="listbox"></ul>
+      </div>
+      <div class="field">
+        <div class="lab">Années</div>
+        <div class="rowx">
+          <input class="inp mono grow" type="number" id="y1" min="1800" max="2100" value="2000" aria-label="Depuis l'année">
+          <span style="color:var(--muted)">à</span>
+          <input class="inp mono grow" type="number" id="y2" min="1800" max="2100" aria-label="Jusqu'à l'année">
+        </div>
+      </div>
+      <div class="field">
+        <div class="lab">Mois <small id="mhint">toute l'année</small></div>
+        <div class="chips months" id="months"></div>
+      </div>
+      <div class="field">
+        <div class="lab">Sources</div>
+        <div class="checks">
+          <label><input type="checkbox" id="srcG" checked> GBIF (INPN, associations…)</label>
+          <label><input type="checkbox" id="srcI" checked> iNaturalist</label>
+          <label><input type="checkbox" id="unval"> avec les observations à valider</label>
+        </div>
+      </div>
+      <details class="more">
+        <summary>Bases à consulter à la main</summary>
+        <p style="margin:8px 0 0">Elles n'ont pas d'accès ouvert qu'un outil comme celui-ci peut interroger.</p>
+        <ul>
+          <li><a href="https://openobs.mnhn.fr/" target="_blank" rel="noopener">OpenObs</a> : toutes les données de l'INPN, souvent à la maille</li>
+          <li><a href="https://www.faune-france.org/" target="_blank" rel="noopener">Faune-France</a> : synthèses par commune</li>
+          <li><a href="https://www.cistude.org/" target="_blank" rel="noopener">Cistude Nature</a> : atlas des amphibiens et reptiles de Nouvelle-Aquitaine</li>
+        </ul>
+      </details>
+      <div class="cta"><button class="btn primary" id="go">Chercher</button></div>
+    </div>
+
+    <!-- Espèces -->
+    <div class="view" id="v-list" hidden>
+      <div id="listPane">
+        <div class="tools">
+          <div class="status" id="status">Lance une recherche pour remplir le carnet.</div>
+          <div class="rowx">
+            <input class="inp grow" type="search" id="flt" placeholder="Filtrer la liste…" aria-label="Filtrer la liste">
+            <select class="inp" id="sort" aria-label="Trier" style="width:auto">
+              <option value="n">Plus observées</option><option value="date">Vues récemment</option><option value="az">A → Z</option><option value="rare">Plus rares ici</option>
+            </select>
+          </div>
+          <div class="rowx" style="justify-content:space-between;flex-wrap:wrap">
+            <div class="key"><span><i class="dot"></i>précis</span><span><i class="dot v"></i>flouté</span><span><i class="dot s"></i>sélection</span></div>
+            <label class="checks" style="font-size:13px"><span style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="hideV"> masquer les floutés</span></label>
+          </div>
+        </div>
+        <div id="species"></div>
+      </div>
+      <div class="detail" id="detail" hidden></div>
+    </div>
+  </section>
+</div>
+<div id="toast" hidden role="status"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+"use strict";
+/* ============ Données de référence ============ */
+const GROUPS=[
+  {id:"amph",name:"Amphibiens",gbif:[131],inat:[20978]},
+  {id:"rept",name:"Reptiles",gbif:[11592253,11418114],inat:[26036]},
+  {id:"odo",name:"Libellules",gbif:[789],inat:[47792]},
+  {id:"lep",name:"Papillons",gbif:[797],inat:[47157]},
+  {id:"orth",name:"Criquets, sauterelles",gbif:[1458],inat:[47651]},
+  {id:"orch",name:"Orchidées",gbif:[7689],inat:[47217]},
+  {id:"chiro",name:"Chauves-souris",gbif:[734],inat:[40268]},
+  {id:"mam",name:"Mammifères",gbif:[359],inat:[40151]},
+  {id:"aves",name:"Oiseaux",gbif:[212],inat:[3]},
+  {id:"fungi",name:"Champignons",gbif:[5],inat:[47170]},
+];
+const MONTHS="JFMAMJJASOND".split(""), MONTHS_L=["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
+const MAX_GBIF=4500, MAX_INAT=1000, FR_PLACE=6753;
+const IUCN={NT:"quasi menacée",VU:"vulnérable",EN:"en danger",CR:"en danger critique"};
+
+/* ============ État ============ */
+const $=id=>document.getElementById(id);
+const store={get(k,d){try{const v=JSON.parse(localStorage.getItem("cp2_"+k));return v??d}catch(e){return d}},set(k,v){try{localStorage.setItem("cp2_"+k,JSON.stringify(v))}catch(e){}}};
+const S={zone:"radius",center:null,label:"",bbox:null,groups:new Set(["amph"]),customs:[],useTargets:false,months:new Set(),
+  records:[],species:new Map(),sel:null,running:false,truncated:false};
+let targets=store.get("targets",[]), places=store.get("places",[]);
+const frCache=new Map(Object.entries(store.get("fr",{}))), infoCache=new Map(Object.entries(store.get("info",{})));
+const isMobile=()=>matchMedia("(max-width:860px)").matches;
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const spKey=n=>(n||"").toLowerCase().split(/\s+/).filter(w=>!/^(kl\.|x|×)$/.test(w)).slice(0,2).join(" ");
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function getJSON(url,signal,retry=1){
+  const r=await fetch(url,{signal});
+  if(r.status===429&&retry){await sleep(2500);return getJSON(url,signal,retry-1)}
+  if(!r.ok)throw new Error("erreur "+r.status+" sur "+new URL(url).host);
+  return r.json();
+}
+async function pool(items,n,fn){let i=0;await Promise.all(Array.from({length:n},async()=>{while(i<items.length){const k=i++;try{await fn(items[k])}catch(e){}}}))}
+let toastT;function toast(msg,ms=3200){const t=$("toast");t.textContent=msg;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,ms)}
+
+/* ============ Carte ============ */
+const ign=(layer,fmt,o={})=>L.tileLayer("https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER="+layer+"&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT="+fmt,
+  Object.assign({maxZoom:19,attribution:'© <a href="https://www.ign.fr/" target="_blank" rel="noopener">IGN</a>'},o));
+const bases={
+  "Plan IGN":ign("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2","image/png"),
+  "Photo aérienne":ign("ORTHOIMAGERY.ORTHOPHOTOS","image/jpeg"),
+  "Infrarouge (l'eau ressort en noir)":ign("ORTHOIMAGERY.ORTHOPHOTOS.IRC","image/jpeg",{minZoom:6}),
+  "Relief (OpenTopoMap)":L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",{maxZoom:17,attribution:"© OpenTopoMap, © OpenStreetMap"})};
+const ov=(l,o)=>ign(l,"image/png",Object.assign({minZoom:6,maxNativeZoom:16,opacity:.7},o));
+const overlays={
+  "Cours d'eau et plans d'eau":ov("HYDROGRAPHY.HYDROGRAPHY",{maxNativeZoom:18,opacity:.9}),
+  "Zones humides et tourbières":ov("TOURBIERES_ZONES-HUMIDES.BCAE"),
+  "Forêts (BD Forêt)":ov("LANDCOVER.FORESTINVENTORY.V2",{opacity:.5}),
+  "ZNIEFF type 1":ov("Patrinat_ZNIEFF1",{opacity:.55}),
+  "ZNIEFF type 2":ov("Patrinat_ZNIEFF2",{opacity:.45})};
+const map=L.map("map",{preferCanvas:true,zoomControl:false,layers:[bases[store.get("base","Plan IGN")]||bases["Plan IGN"]]}).setView([46.6,2.4],6);
+L.control.layers(bases,overlays,{position:"topright"}).addTo(map);
+L.control.zoom({position:"topright"}).addTo(map);
+map.on("baselayerchange",e=>store.set("base",e.name));
+const zoneLayer=L.layerGroup().addTo(map), dataLayer=L.layerGroup().addTo(map), selLayer=L.layerGroup().addTo(map), meLayer=L.layerGroup().addTo(map);
+let distLayer=null;
+// Bouton « où suis-je » : suit la position sur le terrain
+const Loc=L.Control.extend({options:{position:"topright"},onAdd(){
+  const d=L.DomUtil.create("div","leaflet-bar"),a=L.DomUtil.create("a","locbtn",d);
+  a.href="#";a.title="Me suivre sur la carte";a.setAttribute("role","button");a.setAttribute("aria-label","Me suivre sur la carte");
+  a.innerHTML='<svg viewBox="0 0 24 24"><path d="M12 2l7 19-7-4-7 4z"/></svg>';
+  L.DomEvent.on(a,"click",e=>{L.DomEvent.stop(e);
+    if(a.classList.toggle("on")){map.locate({watch:true,setView:true,maxZoom:15,enableHighAccuracy:true})}
+    else{map.stopLocate();meLayer.clearLayers()}});
+  map.on("locationfound",e=>{meLayer.clearLayers();L.circle(e.latlng,{radius:e.accuracy,color:"#1d6fe0",weight:1,fillOpacity:.1,interactive:false}).addTo(meLayer);
+    L.circleMarker(e.latlng,{radius:7,color:"#fff",weight:2.5,fillColor:"#1d6fe0",fillOpacity:1,interactive:false}).addTo(meLayer)});
+  map.on("locationerror",()=>{a.classList.remove("on");toast("Position indisponible. Autorise la localisation dans ton navigateur.")});
+  return d}});
+map.addControl(new Loc());
+function fitOpts(){return isMobile()?{paddingTopLeft:[24,24],paddingBottomRight:[24,$("sheet").offsetHeight+12]}:{padding:[36,36]}}
+function drawZone(fit){
+  zoneLayer.clearLayers();
+  if(S.zone==="radius"&&S.center){
+    const c=L.circle([S.center.lat,S.center.lon],{radius:+$("radius").value*1000,color:css("--ink"),weight:1.5,dashArray:"6 6",fill:false,interactive:false}).addTo(zoneLayer);
+    L.circleMarker([S.center.lat,S.center.lon],{radius:5,color:css("--ink"),weight:2,fillColor:"#fff",fillOpacity:1,interactive:false}).addTo(zoneLayer);
+    if(fit)map.fitBounds(c.getBounds(),fitOpts());
+  }else if(S.zone==="view"&&S.bbox){
+    L.rectangle(S.bbox,{color:css("--ink"),weight:1.5,dashArray:"6 6",fill:false,interactive:false}).addTo(zoneLayer);
+  }
+}
+map.on("click",e=>{
+  if(S.zone!=="radius")return;
+  const {lat,lng}=e.latlng;
+  const p=L.popup({closeButton:false}).setLatLng(e.latlng).setContent(`<span class="mono">${lat.toFixed(4)}, ${lng.toFixed(4)}</span><br><button class="btn" style="margin-top:8px" id="pick">Chercher autour d'ici</button>`).openOn(map);
+  setTimeout(()=>{const b=document.getElementById("pick");if(b)b.onclick=async()=>{map.closePopup(p);await reverse(lat,lng);search()}},0);
+});
+map.on("moveend",()=>{$("here").hidden=!(S.zone==="view"&&!S.running)});
+$("here").onclick=()=>search();
+
+/* ============ Tiroir (téléphone) ============ */
+const sheet=$("sheet");
+function sheetH(state){const H=window.innerHeight;return {peek:112,half:Math.round(H*.52),full:Math.round(H*.93)}[state]}
+function setSheet(state){sheet.dataset.state=state;if(isMobile())sheet.style.height=sheetH(state)+"px";else sheet.style.height=""}
+(function dragSheet(){
+  let y0=null,h0=0,moved=false;
+  const down=e=>{if(!isMobile()||e.target.closest("button"))return;y0=e.clientY;h0=sheet.offsetHeight;moved=false;sheet.classList.add("drag");e.currentTarget.setPointerCapture(e.pointerId)};
+  const move=e=>{if(y0==null)return;const d=y0-e.clientY;if(Math.abs(d)>6)moved=true;sheet.style.height=Math.max(96,Math.min(window.innerHeight*.95,h0+d))+"px"};
+  const up=()=>{if(y0==null)return;y0=null;sheet.classList.remove("drag");
+    if(!moved){setSheet({peek:"half",half:"full",full:"peek"}[sheet.dataset.state]);return}
+    const h=sheet.offsetHeight;setSheet(["peek","half","full"].sort((a,b)=>Math.abs(sheetH(a)-h)-Math.abs(sheetH(b)-h))[0])};
+  for(const el of [$("grip"),$("head")]){el.addEventListener("pointerdown",down);el.addEventListener("pointermove",move);el.addEventListener("pointerup",up);el.addEventListener("pointercancel",up)}
+  addEventListener("resize",()=>{setSheet(sheet.dataset.state);setTimeout(()=>map.invalidateSize(),320)});
+})();
+function showTab(t){
+  $("t-search").setAttribute("aria-selected",t==="search");$("t-list").setAttribute("aria-selected",t==="list");
+  $("v-search").hidden=t!=="search";$("v-list").hidden=t!=="list";
+  if(isMobile()&&sheet.dataset.state==="peek")setSheet("half");
+}
+$("t-search").onclick=()=>showTab("search");$("t-list").onclick=()=>showTab("list");
+
+/* ============ Formulaire ============ */
+function setZone(z){
+  S.zone=z;[...$("zone").children].forEach(b=>b.setAttribute("aria-pressed",b.dataset.z===z));
+  $("placeBox").hidden=z!=="radius";
+  const h=$("zhint");h.hidden=z==="radius";
+  h.textContent=z==="view"?"Déplace et zoome la carte sur le secteur voulu, puis lance la recherche.":"Pour un taxon précis (espèce, genre, famille) ou ta liste de cibles. Les groupes entiers sont trop gros pour la France entière.";
+  $("here").hidden=z!=="view";drawZone(false);
+}
+$("zone").onclick=e=>{const b=e.target.closest("button");if(b)setZone(b.dataset.z)};
+function setCenter(lat,lon,label,fit=true){
+  S.center={lat:+lat,lon:+lon};S.label=label||(S.center.lat.toFixed(4)+", "+S.center.lon.toFixed(4));
+  $("q").value=S.label;drawZone(fit);renderPlaces();
+}
+async function reverse(lat,lon){
+  let label=lat.toFixed(4)+", "+lon.toFixed(4);
+  try{const j=await getJSON(`https://data.geopf.fr/geocodage/reverse?lat=${lat}&lon=${lon}&limit=1&index=address`);const p=j.features?.[0]?.properties;if(p)label=p.city||p.label}catch(e){}
+  setCenter(lat,lon,label,false);
+}
+function autocomplete(input,list,fetcher,render,pick){
+  let t,ctl;
+  input.addEventListener("input",()=>{clearTimeout(t);const q=input.value.trim();if(q.length<3){list.hidden=true;return}
+    t=setTimeout(async()=>{ctl?.abort();ctl=new AbortController();
+      try{const items=await fetcher(q,ctl.signal);list.innerHTML="";
+        items.forEach(it=>{const li=document.createElement("li");li.setAttribute("role","option");li.innerHTML=render(it);li.onclick=()=>{list.hidden=true;pick(it)};list.appendChild(li)});
+        list.hidden=!items.length}catch(e){if(e.name!=="AbortError")list.hidden=true}},260)});
+  input.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();list.querySelector("li")?.click()}if(e.key==="Escape")list.hidden=true});
+}
+autocomplete($("q"),$("qs"),
+  async(q,sig)=>(await getJSON("https://data.geopf.fr/geocodage/search?limit=6&q="+encodeURIComponent(q),sig)).features,
+  f=>esc(f.properties.label)+" <small>"+esc(f.properties.context||"")+"</small>",
+  f=>setCenter(f.geometry.coordinates[1],f.geometry.coordinates[0],f.properties.label));
+autocomplete($("tax"),$("ts"),
+  async(q,sig)=>(await getJSON("https://api.inaturalist.org/v1/taxa/autocomplete?per_page=8&locale=fr&preferred_place_id="+FR_PLACE+"&q="+encodeURIComponent(q),sig)).results,
+  t=>`<b>${esc(t.preferred_common_name||t.name)}</b> <span class="latin">${esc(t.name)}</span> <small>· ${esc(({species:"espèce",genus:"genre",family:"famille",order:"ordre",class:"classe",subspecies:"sous-espèce"})[t.rank]||t.rank)}</small>`,
+  async t=>{$("tax").value="";
+    if(S.customs.some(c=>c.inat===t.id))return;
+    const c={name:t.name,fr:t.preferred_common_name||"",inat:t.id,gbif:null};S.customs.push(c);renderGroups();
+    c.gbif=await gbifKey(t.name);if(!c.gbif)toast("« "+t.name+" » n'a pas été trouvé dans GBIF : recherche sur iNaturalist seulement.")});
+document.addEventListener("click",e=>{if(!e.target.closest(".ac")){$("qs").hidden=true;$("ts").hidden=true}if(!e.target.closest("#menu,#menuBtn"))$("menu").hidden=true});
+async function gbifKey(name){try{const m=await getJSON("https://api.gbif.org/v1/species/match?name="+encodeURIComponent(name));return(m.usageKey&&!["NONE","HIGHERRANK"].includes(m.matchType))?m.usageKey:null}catch(e){return null}}
+async function inatId(name){try{const j=await getJSON("https://api.inaturalist.org/v1/taxa?per_page=1&q="+encodeURIComponent(name));return j.results[0]?.id||null}catch(e){return null}}
+
+$("gps").onclick=()=>{
+  if(!navigator.geolocation){toast("La localisation n'est pas disponible ici.");return}
+  toast("Localisation en cours…");
+  navigator.geolocation.getCurrentPosition(async p=>{await reverse(p.coords.latitude,p.coords.longitude);drawZone(true);toast("Position trouvée.")},
+    ()=>toast("Position refusée ou indisponible. Tape une commune ou touche la carte."),{timeout:12000});
+};
+$("radius").addEventListener("input",()=>{$("rlab").textContent=$("radius").value+" km";drawZone(false)});
+$("radius").addEventListener("change",()=>drawZone(true));
+$("fav").onclick=()=>{
+  if(!S.center)return;
+  const short=S.label.replace(/\s*\d{5}.*$/,"").slice(0,28)||S.label;
+  if(!places.some(p=>p.label===short)){places.unshift({label:short,lat:S.center.lat,lon:S.center.lon});places=places.slice(0,8);store.set("places",places);renderPlaces();toast("Lieu enregistré.")}
+};
+function renderPlaces(){
+  const box=$("places");box.innerHTML="";
+  places.forEach((p,i)=>{const b=document.createElement("button");b.type="button";b.className="chip";
+    b.innerHTML=esc(p.label)+' <span class="x" role="button" aria-label="Retirer">×</span>';
+    b.onclick=e=>{if(e.target.classList.contains("x")){places.splice(i,1);store.set("places",places);renderPlaces()}else setCenter(p.lat,p.lon,p.label)};
+    box.appendChild(b)});
+}
+function renderGroups(){
+  const box=$("groups");box.innerHTML="";
+  const add=(html,pressed,cls,fn)=>{const b=document.createElement("button");b.type="button";b.className="chip "+cls;b.setAttribute("aria-pressed",pressed);b.innerHTML=html;b.onclick=fn;box.appendChild(b)};
+  if(targets.length)add("Mes cibles <span class='mono'>"+targets.length+"</span>",S.useTargets,"sunny",()=>{S.useTargets=!S.useTargets;renderGroups()});
+  GROUPS.forEach(g=>add(esc(g.name),S.groups.has(g.id),"",()=>{S.groups.has(g.id)?S.groups.delete(g.id):S.groups.add(g.id);renderGroups()}));
+  S.customs.forEach((c,i)=>add(esc(c.fr||c.name)+' <span class="x">×</span>',true,"",()=>{S.customs.splice(i,1);renderGroups()}));
+}
+MONTHS.forEach((m,i)=>{const b=document.createElement("button");b.type="button";b.className="chip";b.textContent=m;b.title=MONTHS_L[i];b.setAttribute("aria-label",MONTHS_L[i]);b.setAttribute("aria-pressed","false");
+  b.onclick=()=>{S.months.has(i+1)?S.months.delete(i+1):S.months.add(i+1);syncMonths()};$("months").appendChild(b)});
+function syncMonths(){[...$("months").children].forEach((b,i)=>b.setAttribute("aria-pressed",S.months.has(i+1)));
+  $("mhint").textContent=S.months.size?[...S.months].sort((a,b)=>a-b).map(m=>["janv.","févr.","mars","avr.","mai","juin","juil.","août","sept.","oct.","nov.","déc."][m-1]).join(", "):"toute l'année"}
+
+/* ============ Recherche ============ */
+$("go").onclick=()=>search();
+async function search(){
+  if(S.running)return;
+  // -- taxons demandés
+  const gk=[],ik=[];
+  GROUPS.filter(g=>S.groups.has(g.id)).forEach(g=>{gk.push(...g.gbif);ik.push(...g.inat)});
+  for(const c of S.customs){if(c.gbif)gk.push(c.gbif);if(c.inat)ik.push(c.inat)}
+  if(S.useTargets){
+    for(const t of targets){if(!t.gbif)t.gbif=await gbifKey(t.name);if(!t.inat)t.inat=await inatId(t.name);if(t.gbif)gk.push(t.gbif);if(t.inat)ik.push(t.inat)}
+    store.set("targets",targets);
+  }
+  if(!gk.length&&!ik.length){toast("Choisis au moins un groupe ou un taxon.");showTab("search");return}
+  if(S.zone==="france"&&S.groups.size){toast("France entière : retire les groupes entiers et garde un taxon précis ou tes cibles.",5000);showTab("search");return}
+  if(S.zone==="radius"&&!S.center){toast("Choisis d'abord un lieu.");showTab("search");return}
+  const useG=$("srcG").checked&&gk.length, useI=$("srcI").checked&&ik.length;
+  if(!useG&&!useI){toast("Coche au moins une source.");return}
+  const y1=+$("y1").value||1800, y2=+$("y2").value||new Date().getFullYear(), months=[...S.months].sort((a,b)=>a-b);
+  // -- zone
+  let gZone,iZone,zoneTxt;
+  if(S.zone==="radius"){const r=+$("radius").value;gZone=`&geoDistance=${S.center.lat},${S.center.lon},${r}km`;iZone=`&lat=${S.center.lat}&lng=${S.center.lon}&radius=${r}`;zoneTxt=`${r} km autour de ${S.label}`}
+  else if(S.zone==="view"){const b=map.getBounds();S.bbox=[[b.getSouth(),b.getWest()],[b.getNorth(),b.getEast()]];
+    gZone=`&decimalLatitude=${b.getSouth().toFixed(5)},${b.getNorth().toFixed(5)}&decimalLongitude=${b.getWest().toFixed(5)},${b.getEast().toFixed(5)}`;
+    iZone=`&swlat=${b.getSouth()}&swlng=${b.getWest()}&nelat=${b.getNorth()}&nelng=${b.getEast()}`;zoneTxt="la zone tracée sur la carte"}
+  else{gZone="&country=FR";iZone="&place_id="+FR_PLACE;zoneTxt="la France entière"}
+  drawZone(S.zone==="radius");
+  S.running=true;$("go").disabled=true;$("bar").classList.add("on");$("here").hidden=true;
+  S.records=[];S.species=new Map();S.sel=null;S.truncated=false;dataLayer.clearLayers();selLayer.clearLayers();removeDist();
+  $("detail").hidden=true;$("listPane").hidden=false;$("species").innerHTML="";showTab("list");
+  const status=h=>$("status").innerHTML=h, notes=[];
+  saveState();
+  try{
+    const fromINat=new Set();
+    if(useG){
+      const base="https://api.gbif.org/v1/occurrence/search?"+[...new Set(gk)].map(k=>"taxonKey="+k).join("&")+gZone+
+        `&hasCoordinate=true&hasGeospatialIssue=false&occurrenceStatus=PRESENT&year=${y1},${y2}`+months.map(m=>"&month="+m).join("");
+      status("GBIF : inventaire des espèces…");
+      const fac=await getJSON(base+"&limit=0&facet=speciesKey&facetLimit=1500");
+      const total=fac.count, counts=new Map((fac.facets?.[0]?.counts||[]).map(c=>[+c.name,c.count]));
+      for(let off=0;off<Math.min(total,MAX_GBIF);off+=300){
+        status(`GBIF : <b class="mono">${off}</b> / ${Math.min(total,MAX_GBIF)} observations…`);
+        const j=await getJSON(base+"&limit=300&offset="+off);
+        for(const o of j.results){
+          const name=o.species||(o.genus?o.genus+" sp.":o.scientificName);if(!name)continue;
+          const m=/inaturalist\.org\/observations\/(\d+)/.exec(o.occurrenceID||o.references||"");if(m)fromINat.add(m[1]);
+          S.records.push({src:"GBIF",name,key:spKey(name),date:(o.eventDate||String(o.year||"")).slice(0,10),year:o.year,month:o.month,
+            lat:o.decimalLatitude,lon:o.decimalLongitude,unc:o.coordinateUncertaintyInMeters||null,dataset:/^iNaturalist/i.test(o.datasetName||"")?"iNaturalist, via GBIF":(o.datasetName||o.institutionCode||"GBIF"),
+            gbifKey:o.speciesKey,iucn:o.iucnRedListCategory,who:o.recordedBy,place:o.locality||o.municipality,stage:o.lifeStage,
+            url:"https://www.gbif.org/occurrence/"+o.gbifID,srcUrl:o.references||(/^https?:/.test(o.occurrenceID||"")?o.occurrenceID:"")});
+        }
+        if(j.endOfRecords)break;
+      }
+      const seen=new Set(S.records.map(r=>r.gbifKey));
+      const missing=[...counts.keys()].filter(k=>!seen.has(k));
+      if(missing.length){status("GBIF : espèces hors carte…");await pool(missing,8,async k=>{const s=await getJSON("https://api.gbif.org/v1/species/"+k);addSpecies(s.species||s.canonicalName,{gbifKey:k})})}
+      S.gCounts=counts;
+      if(total>MAX_GBIF){S.truncated=true;notes.push(`GBIF contient ${total.toLocaleString("fr")} données ici : la carte montre les ${MAX_GBIF} premières, la liste d'espèces est complète. Réduis la zone ou la période pour tout voir.`)}
+    }else S.gCounts=new Map();
+    if(useI){
+      const base=`https://api.inaturalist.org/v1/observations?taxon_id=${[...new Set(ik)].join(",")}${iZone}&quality_grade=${$("unval").checked?"research,needs_id":"research"}&d1=${y1}-01-01&d2=${y2}-12-31${months.length?"&month="+months.join(","):""}&locale=fr&preferred_place_id=${FR_PLACE}&per_page=200&order_by=observed_on`;
+      let total=0;
+      for(let page=1;page<=MAX_INAT/200;page++){
+        status(`iNaturalist : page <b class="mono">${page}</b>…`);
+        const j=await getJSON(base+"&page="+page);total=j.total_results;
+        for(const o of j.results){
+          const t=o.taxon;if(!t||!o.location)continue;
+          const name=t.rank==="genus"?t.name+" sp.":t.name,key=spKey(name);
+          if(t.preferred_common_name&&!["genus","family","order"].includes(t.rank))frCache.set(key,t.preferred_common_name);
+          if(t.default_photo&&!infoCache.has(key)&&t.rank==="species")infoCache.set(key,{id:t.id,sq:t.default_photo.square_url,md:t.default_photo.medium_url,at:t.default_photo.attribution});
+          if(o.quality_grade==="research"&&fromINat.has(String(o.id)))continue; // même observation déjà reçue par GBIF
+          const [la,lo]=o.location.split(",").map(Number);
+          S.records.push({src:"iNaturalist",name,key,date:o.observed_on||"",year:o.observed_on?+o.observed_on.slice(0,4):null,month:o.observed_on?+o.observed_on.slice(5,7):null,
+            lat:la,lon:lo,unc:o.obscured?Math.max(o.public_positional_accuracy||0,14000):(o.public_positional_accuracy||o.positional_accuracy||null),
+            dataset:"iNaturalist"+(o.quality_grade==="research"?"":" (à valider)"),who:o.user?.login,place:o.place_guess,
+            url:o.uri,srcUrl:o.uri,photo:o.photos?.[0]?.url?.replace("square","small")});
+        }
+        if(page*200>=total)break;await sleep(450);
+      }
+      if(total>MAX_INAT){S.truncated=true;notes.push(`iNaturalist : ${total.toLocaleString("fr")} observations, seules les ${MAX_INAT} plus récentes sont chargées.`)}
+    }
+    // -- regroupement
+    for(const r of S.records){const s=addSpecies(r.name,{gbifKey:r.gbifKey});s.recs.push(r);if(r.iucn&&IUCN[r.iucn])s.iucn=r.iucn}
+    for(const s of S.species.values()){
+      s.recs.sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+      s.last=s.recs[0]?.date||"";s.srcs=[...new Set(s.recs.map(r=>r.src))];
+      s.precise=s.recs.filter(r=>r.unc==null||r.unc<1000).length;
+      const g=s.gbifKey?(S.gCounts.get(s.gbifKey)||0):0, loadedG=s.recs.filter(r=>r.src==="GBIF").length;
+      s.n=s.recs.length+Math.max(0,g-loadedG);
+      if(frCache.has(s.key))s.fr=frCache.get(s.key);
+    }
+    status("Noms français…");
+    await pool([...S.species.values()].filter(s=>!s.fr&&s.gbifKey&&!s.genus),8,async s=>{
+      const j=await getJSON(`https://api.gbif.org/v1/species/${s.gbifKey}/vernacularNames?limit=200`);
+      const fr=j.results.filter(v=>v.language==="fra"),p=fr.find(v=>v.source==="TAXREF")||fr[0];
+      if(p){s.fr=p.vernacularName.replace(/\s*\((L'|Le|La|Les)\)/gi,"").split(",")[0].trim();if(!s.fr)return;s.fr=s.fr[0].toUpperCase()+s.fr.slice(1);frCache.set(s.key,s.fr)}});
+    store.set("fr",Object.fromEntries([...frCache].slice(-1500)));store.set("info",Object.fromEntries([...infoCache].slice(-600)));
+    const nSp=[...S.species.values()].filter(s=>!s.genus).length;
+    status(`<b>${nSp}</b> espèce${nSp>1?"s":""} et <b class="mono">${S.records.length.toLocaleString("fr")}</b> observations dans ${esc(zoneTxt)}, de ${y1} à ${y2}${months.length?" ("+esc($("mhint").textContent)+")":""}.`+notes.map(n=>`<br><span class="warn">${esc(n)}</span>`).join(""));
+    $("sum").textContent=`${nSp} espèce${nSp>1?"s":""} · ${S.records.length.toLocaleString("fr")} obs. · ${S.zone==="radius"?S.label.replace(/\s*\d{5}.*$/,"")+" "+$("radius").value+" km":S.zone==="view"?"zone carte":"France"}`;
+    $("cnt").textContent=nSp;$("cnt").hidden=false;
+    renderList();drawData();
+    if(S.zone==="france"&&S.records.length)map.fitBounds(L.latLngBounds(S.records.map(r=>[r.lat,r.lon])),fitOpts());
+    if(isMobile())setSheet("half");
+  }catch(err){
+    console.error(err);
+    status(`<span class="warn">La recherche n'a pas abouti (${esc(err.message)}). Vérifie la connexion et relance ; si ça continue, le service est peut-être en maintenance.</span>`);
+    renderList();drawData();
+  }finally{S.running=false;$("go").disabled=false;$("bar").classList.remove("on");document.querySelectorAll(".needdata").forEach(b=>b.disabled=!S.records.length);$("here").hidden=S.zone!=="view"}
+}
+function addSpecies(name,extra){
+  const k=spKey(name);let s=S.species.get(k);
+  if(!s){s={key:k,name,recs:[],fr:"",genus:/ sp\.$/.test(name),n:0};S.species.set(k,s)}
+  if(extra.gbifKey&&!s.gbifKey)s.gbifKey=extra.gbifKey;
+  return s;
+}
+
+/* ============ Liste ============ */
+const isTarget=s=>targets.some(t=>t.key===s.key);
+function renderList(){
+  const q=$("flt").value.trim().toLowerCase(),sort=$("sort").value;
+  let list=[...S.species.values()].filter(s=>!q||(s.fr+" "+s.name).toLowerCase().includes(q));
+  list.sort({n:(a,b)=>b.n-a.n,rare:(a,b)=>a.n-b.n,date:(a,b)=>(b.last||"").localeCompare(a.last||""),az:(a,b)=>(a.fr||a.name).localeCompare(b.fr||b.name,"fr")}[sort]);
+  const box=$("species");box.innerHTML="";
+  if(!list.length){box.innerHTML=S.species.size?'<div class="empty">Aucune espèce ne correspond à ce filtre.</div>':(S.running?"":'<div class="empty"><b>Rien dans cette zone</b>Agrandis le rayon, élargis les années ou retire le filtre des mois.</div>');return}
+  const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){io.unobserve(e.target);thumb(e.target.sp,e.target)}}),{root:$("v-list"),rootMargin:"200px"});
+  for(const s of list){
+    const b=document.createElement("button");b.className="sp";b.sp=s;
+    b.innerHTML=`<div class="ph">${esc((s.fr||s.name)[0])}</div>
+      <div class="nm">${esc(s.fr||s.name)}${s.fr?`<br><span class="latin" style="font-weight:400;color:var(--muted)">${esc(s.name)}</span>`:""}</div>
+      <div class="n">${s.n.toLocaleString("fr")}<small>obs.</small></div>
+      <div class="meta">${s.last?`vu le <span class="mono">${esc(frDate(s.last))}</span>`:"présent, hors carte"}${isTarget(s)?'<span class="tag t">cible</span>':""}${s.iucn?`<span class="tag r" title="Liste rouge mondiale UICN">${s.iucn}</span>`:""}${s.recs.length&&!s.precise?'<span class="tag v">flouté</span>':""}${(s.srcs||[]).map(x=>`<span class="tag">${x==="iNaturalist"?"iNat":x}</span>`).join("")}</div>`;
+    b.onclick=()=>openDetail(s.key);box.appendChild(b);io.observe(b);
+  }
+}
+$("flt").addEventListener("input",renderList);$("sort").addEventListener("change",renderList);
+$("hideV").addEventListener("change",()=>{drawData();drawSel()});
+const frDate=d=>d.length>=10?d.slice(8,10)+"/"+d.slice(5,7)+"/"+d.slice(0,4):d;
+// Vignettes : gratuites quand iNaturalist a fourni l'espèce, sinon demandées une à une, doucement
+let thumbQ=Promise.resolve();
+function thumb(s,el){
+  const set=i=>{if(i?.sq&&el.isConnected){const p=el.querySelector(".ph");p.style.backgroundImage=`url("${i.sq}")`;p.textContent=""}};
+  if(s.genus)return;
+  if(infoCache.has(s.key))return set(infoCache.get(s.key));
+  thumbQ=thumbQ.then(async()=>{if(!el.isConnected||infoCache.has(s.key))return set(infoCache.get(s.key));
+    try{const t=(await getJSON("https://api.inaturalist.org/v1/taxa?per_page=1&locale=fr&q="+encodeURIComponent(s.name))).results[0];
+      const i=t?{id:t.id,sq:t.default_photo?.square_url,md:t.default_photo?.medium_url,at:t.default_photo?.attribution}:{};infoCache.set(s.key,i);set(i)}catch(e){}
+    await sleep(350)});
+}
+
+/* ============ Fiche espèce ============ */
+async function openDetail(key){
+  const s=S.species.get(key);if(!s)return;S.sel=key;
+  $("listPane").hidden=true;const d=$("detail");d.hidden=false;$("v-list").scrollTop=0;
+  const recs=visible(s.recs),byM=Array(12).fill(0);recs.forEach(r=>{if(r.month)byM[r.month-1]++});
+  const mx=Math.max(1,...byM),years=recs.map(r=>r.year).filter(Boolean),info=infoCache.get(key)||{};
+  d.innerHTML=`<button class="back" id="back">← Toutes les espèces</button>
+    <div class="hero"><div><div class="ph" id="dph" ${info.md?`style="background-image:url('${esc(info.md)}')"`:""}></div><div class="credit" id="dcr">${esc(info.at||"")}</div></div>
+      <div><h2>${esc(s.fr||s.name)}</h2><div class="latin">${esc(s.name)}</div>
+      ${s.iucn?`<div style="margin-top:8px"><span class="tag r">${s.iucn}</span> <small style="color:var(--muted)">${IUCN[s.iucn]} (liste rouge mondiale)</small></div>`:""}</div></div>
+    <div class="stats"><div class="stat"><b>${s.n.toLocaleString("fr")}</b><span>observations</span></div>
+      <div class="stat"><b>${s.last?esc(s.last.slice(0,4)):"–"}</b><span>dernière année</span></div>
+      <div class="stat"><b>${s.precise||0}</b><span>points précis</span></div></div>
+    <div class="acts"><button class="btn" id="tgt" aria-pressed="${isTarget(s)}">${isTarget(s)?"★ Dans mes cibles":"☆ Ajouter à mes cibles"}</button>
+      <button class="btn" id="dist" aria-pressed="false" ${s.gbifKey?"":"disabled"}>Répartition en France</button></div>
+    <h3>Quand la chercher <small style="text-transform:none;letter-spacing:0;font-weight:400">observations par mois dans cette zone</small></h3>
+    <div class="pheno" style="margin-top:22px">${byM.map(v=>`<div class="${v===mx&&v?"hi":""}" style="height:${Math.round(v/mx*100)}%">${v===mx&&v?`<b>${v}</b>`:""}</div>`).join("")}</div>
+    <div class="phl">${MONTHS.map(m=>`<span>${m}</span>`).join("")}</div>
+    ${years.length?`<div class="hint">Données de ${Math.min(...years)} à ${Math.max(...years)}.${S.truncated?" Calculé sur les observations chargées.":""}</div>`:""}
+    <h3>Dernières observations</h3><div id="obs"></div>
+    <h3>À propos</h3><div class="desc" id="desc">Chargement…</div>
+    <p style="font-size:13.5px">${s.gbifKey?`<a href="https://www.gbif.org/species/${s.gbifKey}" target="_blank" rel="noopener">Fiche GBIF</a> · `:""}<a href="https://www.inaturalist.org/taxa/search?q=${encodeURIComponent(s.name)}" target="_blank" rel="noopener">iNaturalist</a> · <a href="https://openobs.mnhn.fr/" target="_blank" rel="noopener">OpenObs</a></p>`;
+  $("back").onclick=closeDetail;
+  const ob=$("obs");
+  recs.slice(0,10).forEach(r=>{const b=document.createElement("button");b.className="obs";
+    b.innerHTML=`<span class="mono">${esc(frDate(r.date)||"?")}</span><span class="src">${esc(r.place||r.dataset)}</span><span class="tag ${r.unc>=1000?"v":""}">${precTxt(r)}</span>`;
+    b.onclick=()=>{if(isMobile())setSheet("peek");map.setView([r.lat,r.lon],Math.max(map.getZoom(),r.unc>=1000?11:15));L.popup({maxWidth:250}).setLatLng([r.lat,r.lon]).setContent(popup(r)).openOn(map)};ob.appendChild(b)});
+  if(!recs.length)ob.innerHTML='<div class="hint">Espèce signalée par GBIF dans la zone, mais au-delà des observations chargées sur la carte.</div>';
+  $("tgt").onclick=()=>{
+    if(isTarget(s))targets=targets.filter(t=>t.key!==s.key);else targets.push({key:s.key,name:s.name,fr:s.fr,gbif:s.gbifKey||null,inat:infoCache.get(key)?.id||null});
+    store.set("targets",targets);$("tgt").setAttribute("aria-pressed",isTarget(s));$("tgt").textContent=isTarget(s)?"★ Dans mes cibles":"☆ Ajouter à mes cibles";renderGroups()};
+  $("dist").onclick=()=>{
+    if(distLayer){removeDist();$("dist").setAttribute("aria-pressed","false");$("dist").textContent="Répartition en France";drawSel(true);drawZone(S.zone==="radius");return}
+    distLayer=L.tileLayer(`https://api.gbif.org/v2/map/occurrence/density/{z}/{x}/{y}@1x.png?taxonKey=${s.gbifKey}&bin=hex&hexPerTile=50&style=purpleYellow.poly`,{tileSize:512,zoomOffset:-1,opacity:.8,attribution:"répartition © GBIF"}).addTo(map);
+    $("dist").setAttribute("aria-pressed","true");$("dist").textContent="Masquer la répartition";
+    selLayer.clearLayers(); // la répartition remplace les points sélectionnés, sinon ils la cachent
+    if(isMobile())setSheet("peek");setTimeout(()=>map.fitBounds([[41.3,-5.2],[51.1,9.6]],fitOpts()),isMobile()?320:0)};
+  drawSel(true);
+  // photo, description : une demande à iNaturalist, à l'ouverture seulement
+  try{
+    let id=infoCache.get(key)?.id;if(!id&&!s.genus)id=await inatId(s.name);
+    if(id&&S.sel===key){const t=(await getJSON(`https://api.inaturalist.org/v1/taxa/${id}?locale=fr&preferred_place_id=${FR_PLACE}`)).results[0];
+      if(S.sel!==key)return;
+      if(t.default_photo){$("dph").style.backgroundImage=`url("${t.default_photo.medium_url}")`;$("dcr").textContent=t.default_photo.attribution||"";infoCache.set(key,{id,sq:t.default_photo.square_url,md:t.default_photo.medium_url,at:t.default_photo.attribution})}
+      const txt=(t.wikipedia_summary||"").replace(/<[^>]+>/g,"").trim();
+      $("desc").textContent=txt||"Pas de description disponible.";
+      if(t.wikipedia_url){const a=document.createElement("a");a.href=t.wikipedia_url;a.target="_blank";a.rel="noopener";a.textContent=" Wikipédia";$("desc").appendChild(a)}
+    }else if(S.sel===key)$("desc").textContent="Pas de description disponible.";
+  }catch(e){if(S.sel===key)$("desc").textContent="Description indisponible pour le moment."}
+}
+function closeDetail(){S.sel=null;$("detail").hidden=true;$("listPane").hidden=false;removeDist();drawSel();renderList()}
+function removeDist(){if(distLayer){map.removeLayer(distLayer);distLayer=null}}
+
+/* ============ Points sur la carte ============ */
+const visible=recs=>$("hideV").checked?recs.filter(r=>!(r.unc>=1000)):recs;
+const precTxt=r=>r.unc?(r.unc>=1000?"± "+(r.unc/1000).toFixed(r.unc<10000?1:0)+" km":"± "+Math.round(r.unc)+" m"):"point";
+function popup(r){
+  const s=S.species.get(r.key);
+  return `${r.photo?`<img src="${esc(r.photo)}" alt="">`:""}<b>${esc(s?.fr||r.name)}</b><br><span class="latin">${esc(r.name)}</span><br>
+    <span class="mono">${esc(frDate(r.date)||"date inconnue")}</span>${r.stage?" · "+esc(String(r.stage).toLowerCase()):""}<br>
+    ${r.place?esc(r.place)+"<br>":""}${esc(r.dataset)}${r.who?" · "+esc(r.who):""}<br>Précision : ${precTxt(r)}<br>
+    <a href="${esc(r.url)}" target="_blank" rel="noopener">Voir la donnée</a>${r.srcUrl&&r.srcUrl!==r.url?` · <a href="${esc(r.srcUrl)}" target="_blank" rel="noopener">origine</a>`:""}
+    ${S.sel!==r.key?`<br><a href="#" data-open="${esc(r.key)}">Fiche de l'espèce</a>`:""}`;
+}
+map.on("popupopen",e=>{const a=e.popup.getElement().querySelector("[data-open]");if(a)a.onclick=ev=>{ev.preventDefault();map.closePopup();showTab("list");openDetail(a.dataset.open);if(isMobile())setSheet("half")}});
+function mark(r,sel){
+  const vague=r.unc>=1000,out=[];
+  if(sel===true&&vague)out.push(L.circle([r.lat,r.lon],{radius:Math.min(r.unc,25000),color:"#1a1a05",weight:1,opacity:.5,dashArray:"4 4",fillColor:css("--sun"),fillOpacity:.05,interactive:false}));
+  const o=sel?{radius:sel==="small"?4.5:7.5,color:"#1a1a05",weight:sel==="small"?1:1.5,fillColor:css("--sun"),fillOpacity:vague?.45:1}
+    :vague?{radius:5,color:css("--vague"),weight:2,fillColor:"#fff",fillOpacity:.35}
+    :{radius:5.5,color:"#fff",weight:1.5,fillColor:css("--precise"),fillOpacity:.95};
+  out.push(L.circleMarker([r.lat,r.lon],Object.assign(o,{bubblingMouseEvents:false})).bindPopup(()=>popup(r),{maxWidth:250}));
+  return out;
+}
+function drawData(){
+  dataLayer.clearLayers();const recs=visible(S.records);
+  // les floutés d'abord, pour que les points précis restent au-dessus
+  recs.filter(r=>r.unc>=1000).forEach(r=>mark(r).forEach(l=>l.addTo(dataLayer)));
+  recs.filter(r=>!(r.unc>=1000)).forEach(r=>mark(r).forEach(l=>l.addTo(dataLayer)));
+}
+function drawSel(fit){
+  selLayer.clearLayers();
+  const dim=!!S.sel;dataLayer.eachLayer(l=>{if(l.setStyle)l.setStyle({opacity:dim?.25:1,fillOpacity:dim?.12:(l.options.weight===2?.35:.95)})});
+  if(!S.sel)return;
+  const recs=visible(S.species.get(S.sel).recs);recs.forEach(r=>mark(r,recs.length>400?"small":true).forEach(l=>l.addTo(selLayer)));
+  if(fit&&recs.length){const b=L.latLngBounds(recs.map(r=>[r.lat,r.lon]));if(!map.getBounds().contains(b))map.fitBounds(b,Object.assign({maxZoom:14},fitOpts()))}
+}
+
+/* ============ Export et partage ============ */
+$("menuBtn").onclick=()=>{$("menu").hidden=!$("menu").hidden};
+$("menu").onclick=e=>{const a=e.target.closest("button")?.dataset.act;if(!a)return;$("menu").hidden=true;
+  const recs=visible(S.records),nm=r=>S.species.get(r.key)?.fr||"",xml=s=>esc(s);
+  const base="carnet_"+(S.zone==="radius"?S.label.split(/[ ,]/)[0].toLowerCase():S.zone)+"_"+new Date().toISOString().slice(0,10);
+  if(a==="link"){const u=location.href;(navigator.clipboard?.writeText(u)||Promise.reject()).then(()=>toast("Lien copié. Il rouvre cette recherche."),()=>toast("Copie impossible ici : copie l'adresse de la page."));}
+  if(a==="csv"){const cols=["nom_francais","nom_latin","date","latitude","longitude","precision_m","source","jeu_de_donnees","observateur","lieu","lien"];
+    const rows=recs.map(r=>[nm(r),r.name,r.date,r.lat,r.lon,r.unc??"",r.src,r.dataset,r.who||"",r.place||"",r.url]);
+    save(base+".csv","text/csv;charset=utf-8","﻿"+[cols,...rows].map(r=>r.map(v=>{v=String(v??"");return /[;"\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}).join(";")).join("\n"))}
+  if(a==="gpx")save(base+".gpx","application/gpx+xml",`<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Carnet de prospection" xmlns="http://www.topografix.com/GPX/1/1">\n`+
+    recs.map(r=>`<wpt lat="${r.lat}" lon="${r.lon}"><name>${xml(nm(r)||r.name)}</name><desc>${xml(r.name+" · "+r.date+" · "+r.dataset+" · "+precTxt(r))}</desc></wpt>`).join("\n")+"\n</gpx>");
+  if(a==="geojson")save(base+".geojson","application/geo+json",JSON.stringify({type:"FeatureCollection",features:recs.map(r=>({type:"Feature",geometry:{type:"Point",coordinates:[r.lon,r.lat]},
+    properties:{nom_francais:nm(r),nom_latin:r.name,date:r.date,precision_m:r.unc,source:r.src,jeu:r.dataset,lien:r.url}}))}));
+};
+function save(name,type,text){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),3000);toast("Fichier enregistré : "+name)}
+// L'adresse de la page décrit la recherche : on peut la mettre en favori ou l'envoyer
+function saveState(){
+  const p=new URLSearchParams();p.set("z",S.zone);
+  if(S.zone==="radius"){p.set("p",S.center.lat.toFixed(5)+","+S.center.lon.toFixed(5));p.set("l",S.label);p.set("r",$("radius").value)}
+  if(S.zone==="view"&&S.bbox)p.set("b",S.bbox.flat().map(v=>v.toFixed(4)).join(","));
+  if(S.groups.size)p.set("g",[...S.groups].join(","));
+  if(S.customs.length)p.set("x",S.customs.map(c=>[c.inat||"",c.gbif||"",c.name,c.fr].join("~")).join("|"));
+  if(S.useTargets)p.set("c","1");
+  p.set("y",$("y1").value+"-"+$("y2").value);if(S.months.size)p.set("m",[...S.months].join(","));
+  p.set("s",($("srcG").checked?"g":"")+($("srcI").checked?"i":"")+($("unval").checked?"u":""));
+  const h=p.toString();store.set("last",h);try{history.replaceState(null,"","#"+h)}catch(e){location.hash=h}
+}
+function loadState(h){
+  const p=new URLSearchParams(h);if(!p.has("z"))return false;
+  if(p.get("p")){const [la,lo]=p.get("p").split(",").map(Number);if(isFinite(la)&&isFinite(lo))setCenter(la,lo,p.get("l")||"",false)}
+  if(p.get("r")){$("radius").value=p.get("r");$("rlab").textContent=$("radius").value+" km"}
+  if(p.get("b")){const b=p.get("b").split(",").map(Number);if(b.length===4&&b.every(isFinite)){S.bbox=[[b[0],b[1]],[b[2],b[3]]];map.fitBounds(S.bbox,{padding:[0,0]})}}
+  S.groups=new Set((p.get("g")||"").split(",").filter(id=>GROUPS.some(g=>g.id===id)));
+  S.customs=(p.get("x")||"").split("|").filter(Boolean).map(x=>{const [i,g,n,f]=x.split("~");return {inat:+i||null,gbif:+g||null,name:n||"",fr:f||""}}).filter(c=>c.name);
+  S.useTargets=p.get("c")==="1"&&targets.length>0;
+  const y=(p.get("y")||"").split("-");if(+y[0])$("y1").value=+y[0];if(+y[1])$("y2").value=+y[1];
+  S.months=new Set((p.get("m")||"").split(",").map(Number).filter(m=>m>=1&&m<=12));
+  const s=p.get("s")||"gi";$("srcG").checked=s.includes("g");$("srcI").checked=s.includes("i");$("unval").checked=s.includes("u");
+  setZone(["radius","view","france"].includes(p.get("z"))?p.get("z"):"radius");return true;
+}
+
+/* ============ Démarrage ============ */
+(function init(){
+  $("y2").value=new Date().getFullYear();
+  document.querySelectorAll(".needdata").forEach(b=>b.disabled=true);
+  setSheet("half");
+  const ok=loadState(location.hash.slice(1))||loadState(store.get("last",""));
+  if(!ok||(S.zone==="radius"&&!S.center)){setZone("radius");setCenter(44.7686,-0.3137,"La Sauve 33670",false)}
+  renderGroups();renderPlaces();syncMonths();
+  if(S.zone==="radius")drawZone(true);
+  if(S.zone==="view"&&!S.bbox){setZone("radius")}
+  setTimeout(()=>{map.invalidateSize();search()},150);
+})();
+</script>
+</body>
+</html>
