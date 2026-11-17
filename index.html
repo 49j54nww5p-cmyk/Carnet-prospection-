@@ -165,6 +165,23 @@ details.more ul{margin:8px 0 0;padding-left:18px}
 .menu button:hover{background:var(--tint)}
 .menu button:disabled{opacity:.45}
 
+/* Guide de prospection */
+.guide{display:grid;gap:12px;margin-bottom:12px}
+.gq{background:var(--raised);border-radius:12px;padding:10px 12px}
+.gq b{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.gq p{margin:4px 0 0;font-size:14px}
+.gm{display:grid;grid-template-columns:repeat(12,1fr);gap:3px;margin-top:8px}
+.gm span{text-align:center;font:500 11px/20px var(--f-mono);border-radius:4px;background:var(--panel);color:var(--muted)}
+.gm span.on{background:var(--sun);color:var(--on-sun)}
+.pr{display:grid;grid-template-columns:26px 1fr auto;gap:2px 10px;align-items:center;width:100%;text-align:left;border:0;border-top:1px solid var(--line);background:none;padding:9px 2px}
+.pr:hover{background:var(--raised)}
+.pr .rk{font:500 13px var(--f-mono);color:var(--muted)}
+.pr .why{grid-column:2/4;font-size:12.5px;color:var(--muted)}
+.score{font:600 13px var(--f-mono);border-radius:6px;padding:1px 7px}
+.score.c1{background:var(--sun);color:var(--on-sun)} .score.c2{background:#2b7bd6;color:#fff} .score.c3{background:var(--tint);color:var(--ink)}
+.prow{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 4px}
+.prow .btn{flex:1;min-width:140px}
+
 /* Téléphone et tablette étroite : carte plein écran, carnet en tiroir */
 @media (max-width:860px){
   #app{display:block}
@@ -352,7 +369,8 @@ const overlays={
   "Zones humides et tourbières":ov("TOURBIERES_ZONES-HUMIDES.BCAE"),
   "Forêts (BD Forêt)":ov("LANDCOVER.FORESTINVENTORY.V2",{opacity:.5}),
   "ZNIEFF type 1":ov("Patrinat_ZNIEFF1",{opacity:.55}),
-  "ZNIEFF type 2":ov("Patrinat_ZNIEFF2",{opacity:.45})};
+  "ZNIEFF type 2":ov("Patrinat_ZNIEFF2",{opacity:.45}),
+  "Pente du terrain":ign("ELEVATION.SLOPES","image/jpeg",{minZoom:6,maxNativeZoom:14,opacity:.45})};
 const map=L.map("map",{preferCanvas:true,zoomControl:false,layers:[bases[store.get("base","Plan IGN")]||bases["Plan IGN"]]}).setView([46.6,2.4],6);
 L.control.layers(bases,overlays,{position:"topright"}).addTo(map);
 L.control.zoom({position:"topright"}).addTo(map);
@@ -617,7 +635,7 @@ function renderList(){
     b.innerHTML=`<div class="ph">${esc((s.fr||s.name)[0])}</div>
       <div class="nm">${esc(s.fr||s.name)}${s.fr?`<br><span class="latin" style="font-weight:400;color:var(--muted)">${esc(s.name)}</span>`:""}</div>
       <div class="n">${s.n.toLocaleString("fr")}<small>obs.</small></div>
-      <div class="meta">${s.last?`vu le <span class="mono">${esc(frDate(s.last))}</span>`:"présent, hors carte"}${isTarget(s)?'<span class="tag t">cible</span>':""}${s.iucn?`<span class="tag r" title="Liste rouge mondiale UICN">${s.iucn}</span>`:""}${s.recs.length&&!s.precise?'<span class="tag v">flouté</span>':""}${(s.srcs||[]).map(x=>`<span class="tag">${x==="iNaturalist"?"iNat":x}</span>`).join("")}</div>`;
+      <div class="meta">${s.last?`vu le <span class="mono">${esc(frDate(s.last))}</span>`:"présent, hors carte"}${isTarget(s)?'<span class="tag t">cible</span>':""}${profOf(s.key)?'<span class="tag">guide</span>':""}${s.iucn?`<span class="tag r" title="Liste rouge mondiale UICN">${s.iucn}</span>`:""}${s.recs.length&&!s.precise?'<span class="tag v">flouté</span>':""}${(s.srcs||[]).map(x=>`<span class="tag">${x==="iNaturalist"?"iNat":x}</span>`).join("")}</div>`;
     b.onclick=()=>openDetail(s.key);box.appendChild(b);io.observe(b);
   }
 }
@@ -655,6 +673,7 @@ async function openDetail(key){
     <div class="pheno" style="margin-top:22px">${byM.map(v=>`<div class="${v===mx&&v?"hi":""}" style="height:${Math.round(v/mx*100)}%">${v===mx&&v?`<b>${v}</b>`:""}</div>`).join("")}</div>
     <div class="phl">${MONTHS.map(m=>`<span>${m}</span>`).join("")}</div>
     ${years.length?`<div class="hint">Données de ${Math.min(...years)} à ${Math.max(...years)}.${S.truncated?" Calculé sur les observations chargées.":""}</div>`:""}
+    <div id="guide"></div>
     <h3>Dernières observations</h3><div id="obs"></div>
     <h3>À propos</h3><div class="desc" id="desc">Chargement…</div>
     <p style="font-size:13.5px">${s.gbifKey?`<a href="https://www.gbif.org/species/${s.gbifKey}" target="_blank" rel="noopener">Fiche GBIF</a> · `:""}<a href="https://www.inaturalist.org/taxa/search?q=${encodeURIComponent(s.name)}" target="_blank" rel="noopener">iNaturalist</a> · <a href="https://openobs.mnhn.fr/" target="_blank" rel="noopener">OpenObs</a></p>`;
@@ -674,6 +693,7 @@ async function openDetail(key){
     selLayer.clearLayers(); // la répartition remplace les points sélectionnés, sinon ils la cachent
     if(isMobile())setSheet("peek");setTimeout(()=>map.fitBounds([[41.3,-5.2],[51.1,9.6]],fitOpts()),isMobile()?320:0)};
   drawSel(true);
+  prospLayer.clearLayers();renderGuide(s);
   // photo, description : une demande à iNaturalist, à l'ouverture seulement
   try{
     let id=infoCache.get(key)?.id;if(!id&&!s.genus)id=await inatId(s.name);
@@ -686,7 +706,7 @@ async function openDetail(key){
     }else if(S.sel===key)$("desc").textContent="Pas de description disponible.";
   }catch(e){if(S.sel===key)$("desc").textContent="Description indisponible pour le moment."}
 }
-function closeDetail(){S.sel=null;$("detail").hidden=true;$("listPane").hidden=false;removeDist();drawSel();renderList()}
+function closeDetail(){S.sel=null;prospLayer.clearLayers();map.removeLayer(habLayer);$("detail").hidden=true;$("listPane").hidden=false;removeDist();drawSel();renderList()}
 function removeDist(){if(distLayer){map.removeLayer(distLayer);distLayer=null}}
 
 /* ============ Points sur la carte ============ */
@@ -763,6 +783,287 @@ function loadState(h){
   S.months=new Set((p.get("m")||"").split(",").map(Number).filter(m=>m>=1&&m<=12));
   const s=p.get("s")||"gi";$("srcG").checked=s.includes("g");$("srcI").checked=s.includes("i");$("unval").checked=s.includes("u");
   setZone(["radius","view","france"].includes(p.get("z"))?p.get("z"):"radius");return true;
+}
+
+/* ============ Guide de prospection : écologie des amphibiens ============
+   water : milieux de reproduction, poids 1 (accepté) à 3 (préféré)
+     MT mare temporaire · MP mare permanente · ET étang/retenue · RI retenue ou bassin temporaire
+     BO bassin d'orage · RU ruisseau/fossé temporaire · RP cours d'eau permanent
+   terr : habitat terrestre · disp : distance de déplacement courante (km) · repro : mois de reproduction
+   fish : sensible aux poissons (évite les grands plans d'eau empoissonnés) */
+const WATER={MT:"mare temporaire",MP:"mare permanente",ET:"étang ou retenue",RI:"retenue ou bassin temporaire",BO:"bassin d'orage",RU:"ruisseau ou fossé temporaire",RP:"cours d'eau permanent"};
+const TERR={foret:"forêt, surtout feuillus et lisières",bocage:"bocage : haies, bosquets, prairies",ouvert:"milieux ouverts, ensoleillés, souvent sableux ou pierreux",mixte:"assez ubiquiste (bois, haies, jardins)"};
+const P=(water,terr,disp,repro,fish,quand,ou,comment)=>({water,terr,disp,repro,fish,quand,ou,comment});
+const PROFILES={
+"salamandra salamandra":P({RU:3,MT:2,MP:1,RP:1},"foret",.5,[2,3,4,10,11],true,
+  "Adultes de sortie par nuits douces et pluvieuses (plus de 6 °C), de l'automne au printemps. Larves dans l'eau de février à juin.",
+  "Forêts de feuillus fraîches traversées de ruisselets, sources, fossés forestiers et petites mares sans poissons. Les vallons encaissés sont les meilleurs.",
+  "La nuit sous la pluie, parcourir les chemins forestiers à la lampe. Le jour, chercher les larves dans les eaux calmes des ruisselets (tache claire à la base des pattes)."),
+"triturus marmoratus":P({MP:3,MT:2,ET:1},"bocage",1,[2,3,4,5],true,
+  "Dans l'eau de février à mai, pic en mars-avril. Le reste de l'année à terre, sous les souches et pierres.",
+  "Mares bien végétalisées et ensoleillées, sans poissons, en bocage ou lisière de bois feuillus. Supporte les mares qui s'assèchent en été.",
+  "Prospection nocturne à la lampe le long des berges : les adultes se voient bien posés sur le fond. Prendre son temps, revenir plusieurs nuits."),
+"triturus cristatus":P({MP:3,MT:1,ET:1},"bocage",1,[3,4,5,6],true,
+  "Dans l'eau de mars à juin. Larves jusqu'en août-septembre.",
+  "Mares permanentes profondes, ensoleillées, riches en végétation, sans poissons, dans un réseau de mares proches (moins de 500 m) avec haies et bois.",
+  "Lampe de nuit au bord des mares, observation des adultes en pleine eau. Espèce rare : un réseau de mares vaut mieux qu'une mare isolée."),
+"lissotriton helveticus":P({MT:3,MP:3,RU:1,ET:1},"mixte",.5,[2,3,4,5],true,
+  "Dans l'eau de février à mai.",
+  "Presque toutes les petites eaux : mares, ornières, fossés, bassins, près des bois et des haies. Le triton le plus commun du Sud-Ouest.",
+  "Lampe de nuit dans les mares et ornières forestières. Bon indicateur : s'il est absent, le site est souvent pauvre."),
+"lissotriton vulgaris":P({MP:3,MT:2},"bocage",.8,[3,4,5],true,
+  "Dans l'eau de mars à mai.",
+  "Mares ensoleillées en milieu ouvert ou bocager, plaines et vallées alluviales. Plutôt nord et est de la France.",
+  "Lampe de nuit le long des berges végétalisées."),
+"ichthyosaura alpestris":P({MP:3,MT:2},"foret",.8,[3,4,5,6],true,
+  "Dans l'eau de mars à juin, plus tard en montagne.",
+  "Mares et ornières fraîches en forêt, jusqu'en montagne. Absent du Sud-Ouest de plaine.",
+  "Lampe de nuit dans les mares forestières ombragées."),
+"calotriton asper":P({RP:3,RU:2},"foret",.3,[4,5,6,7,8],true,
+  "Actif d'avril à septembre selon l'altitude.",
+  "Torrents et ruisseaux froids et oxygénés des Pyrénées, lacs d'altitude.",
+  "Soulever délicatement les pierres immergées (et les remettre en place), ou observer à la lampe la nuit."),
+"bufo spinosus":P({ET:3,MP:3,RP:1,RI:1},"mixte",2,[1,2,3],false,
+  "Migration vers l'eau par nuits douces et humides de janvier à mars, souvent en masse. Têtards au printemps.",
+  "Étangs, grandes mares et retenues permanentes, même avec poissons (têtards toxiques). Vit à terre dans les bois, haies et jardins, parfois loin de l'eau.",
+  "Routes et chemins à la lampe pendant les nuits de migration. Les cordons d'œufs (longs chapelets) se voient bien dans la végétation immergée."),
+"bufo bufo":P({ET:3,MP:3,RP:1},"foret",3,[2,3,4],false,
+  "Migration de février à avril par nuits douces et humides.",
+  "Étangs et mares permanentes, même avec poissons. Forêts et bocage. Remplacé par le crapaud épineux dans le Sud-Ouest.",
+  "Comme le crapaud épineux : nuits de migration, cordons d'œufs."),
+"epidalea calamita":P({MT:3,RI:3,BO:2},"ouvert",2,[3,4,5,6,7],false,
+  "Chant de mars à juillet, après les fortes pluies, par soirées douces.",
+  "Eaux très peu profondes, chaudes et temporaires : flaques, ornières, carrières, sablières, bassins. Milieux ouverts, sols meubles ou sableux, peu de végétation.",
+  "Écoute du chant à la tombée de la nuit (long roulement porté à plus d'un kilomètre). Visiter carrières et chantiers après une bonne pluie."),
+"bufotes viridis":P({MT:3,BO:2,RI:2},"ouvert",2,[4,5,6],false,
+  "Chant d'avril à juin.",
+  "Eaux temporaires peu profondes en milieu ouvert et chaud. Très localisé dans le Nord-Est de la France.",
+  "Écoute nocturne du chant (trille aigu)."),
+"alytes obstetricans":P({MP:3,ET:2,BO:2,RP:1},"ouvert",1,[3,4,5,6,7,8],false,
+  "Chant de mars à août. Têtards visibles toute l'année, souvent gros.",
+  "Talus, murets, carrières, villages et jardins près d'une eau permanente : bassins, lavoirs, abreuvoirs, mares.",
+  "Écoute à la tombée de la nuit : petit « tût » flûté qui se répète. Repérer les gros têtards dans les bassins et lavoirs."),
+"pelodytes punctatus":P({MT:3,RI:3,BO:2},"ouvert",1,[2,3,4,9,10,11],true,
+  "Deux périodes de reproduction : fin d'hiver-printemps et automne, après les pluies.",
+  "Mares temporaires ensoleillées, bassins et fossés peu profonds en milieu ouvert : friches, vignes, carrières.",
+  "Écoute nocturne : chant discret, grinçant, souvent émis sous l'eau. Pontes en petits paquets accrochés aux tiges."),
+"pelobates cultripes":P({MT:3,RI:2},"ouvert",1,[10,11,12,1,2,3],true,
+  "Reproduction de l'automne au début du printemps, après de fortes pluies.",
+  "Grandes mares temporaires sur sols sableux : landes littorales, dunes, sablières. Très rare.",
+  "Écoute nocturne du chant (faible, sous l'eau) et recherche des têtards géants au printemps."),
+"pelobates fuscus":P({MP:3,MT:2},"ouvert",1,[3,4,5],true,
+  "Reproduction en mars-avril.",
+  "Mares permanentes sur sols sableux et cultivés. Quasi disparu, Nord-Est seulement.",
+  "Écoute nocturne sous l'eau (hydrophone) : chant très discret."),
+"hyla meridionalis":P({MP:3,MT:2,ET:2},"bocage",1.5,[3,4,5,6],true,
+  "Chorus de mars à juin, par soirées douces.",
+  "Mares et étangs bien végétalisés et ensoleillés, entourés de haies, ronciers, roselières. Grimpe dans la végétation.",
+  "Écoute à la tombée de la nuit (« crôa » lent et grave). Le jour, les adultes se chauffent sur les feuilles près de l'eau."),
+"hyla arborea":P({MP:3,MT:2},"bocage",2,[4,5,6],true,
+  "Chorus d'avril à juin.",
+  "Mares ensoleillées dans un bocage dense ou une ripisylve. Nord et est de la France.",
+  "Écoute nocturne (chant rapide et puissant), repérage des chorus de loin."),
+"rana dalmatina":P({MT:3,MP:3,RI:2},"foret",1,[1,2,3],true,
+  "Pontes de fin janvier à mars, parmi les premières de l'année.",
+  "Mares forestières et prairiales ensoleillées, souvent temporaires, en lisière de bois de feuillus. Vit en forêt le reste de l'année.",
+  "Méthode la plus simple : compter les pontes (boules gélatineuses accrochées à une tige, en pleine eau) en plein jour de février à mars."),
+"rana temporaria":P({MT:3,MP:3,ET:2},"mixte",1,[1,2,3,4],true,
+  "Pontes de janvier à avril selon l'altitude.",
+  "Mares, prairies humides, tourbières et fossés en eau, en plaine fraîche et en montagne. Rare dans le Sud-Ouest de plaine.",
+  "Comptage des pontes regroupées en amas en eau peu profonde, en plein jour."),
+"bombina variegata":P({MT:3,RI:2},"foret",1,[5,6,7,8],true,
+  "Actif de mai à août, pontes après les orages.",
+  "Ornières forestières, flaques de chemins, petites dépressions sans végétation. Ces petites eaux ne sont pas cartographiées : suivre les chemins forestiers.",
+  "Le jour, inspecter les ornières en eau des chemins forestiers : les adultes flottent en surface (ventre jaune et noir)."),
+"discoglossus pictus":P({MT:3,BO:2,RU:2},"ouvert",1,[1,2,3,4,5,6,7,8,9,10],true,
+  "Reproduction presque toute l'année après les pluies.",
+  "Flaques, fossés, bassins et petites eaux en milieu ouvert. Pyrénées-Orientales et Languedoc.",
+  "Lampe de nuit dans les petites eaux et fossés."),
+"pelophylax":P({ET:3,MP:3,RP:2,RI:1},"ouvert",2,[4,5,6,7],false,
+  "Chorus d'avril à juillet, de jour comme de nuit.",
+  "Étangs, mares permanentes, fossés et rivières lentes bien ensoleillés. Supporte les poissons. Plusieurs espèces difficiles à distinguer.",
+  "Observation de jour au bord de l'eau et écoute des chœurs. L'identification précise demande le chant ou des critères fins."),
+};
+function profOf(key){return PROFILES[key]||(key.startsWith("pelophylax")?PROFILES.pelophylax:null)}
+
+const prospLayer=L.layerGroup().addTo(map), habLayer=L.layerGroup(), habCache=new Map();
+let lastProsp=[];
+function renderGuide(s){
+  const box=$("guide");if(!box)return;const pf=profOf(s.key);
+  if(!pf){box.innerHTML="";return}
+  box.innerHTML=`<h3>Guide de prospection</h3>
+  <div class="guide">
+    <div class="gq"><b>Quand</b><p>${pf.quand}</p><div class="gm">${MONTHS.map((m,i)=>`<span class="${pf.repro.includes(i+1)?"on":""}" title="${MONTHS_L[i]}">${m}</span>`).join("")}</div></div>
+    <div class="gq"><b>Où</b><p>${pf.ou}</p></div>
+    <div class="gq"><b>Comment</b><p>${pf.comment}</p></div>
+    <div class="gq"><b>Logique de recherche</b><p style="font-size:13px">Eau de ponte : ${Object.entries(pf.water).sort((a,b)=>b[1]-a[1]).map(([k,v])=>WATER[k]+(v===3?" (préféré)":"")).join(", ")}.<br>
+      Habitat terrestre : ${TERR[pf.terr]}.<br>Déplacements courants : jusqu'à ${String(pf.disp).replace(".",",")} km autour des sites connus.${pf.fish?"<br>Évite les plans d'eau avec poissons.":""}</p></div>
+  </div>
+  <p class="hint" style="margin-top:0">Toutes les espèces d'amphibiens sont protégées : observer sans capturer ni déplacer (toute manipulation demande une dérogation). Désinfecter bottes et matériel entre deux sites pour ne pas propager la chytridiomycose.</p>
+  <button class="btn primary" id="prosp">Trouver les sites à prospecter</button>
+  <div class="hint" id="pStatus">Analyse les données IGN (mares, plans d'eau, ruisseaux, forêts, haies) dans un rayon de 5 km au plus, puis classe chaque point d'eau selon l'écologie de l'espèce et la proximité des données connues.</div>
+  <div id="pRes"></div>`;
+  $("prosp").onclick=()=>runProspect(s).catch(e=>{console.error(e);$("pStatus").innerHTML=`<span class="warn">L'analyse n'a pas abouti (${esc(e.message)}). Réessaie dans un moment ou réduis le rayon.</span>`;$("prosp").disabled=false});
+}
+
+// Coordonnées : GeoJSON IGN renvoyé en lon,lat (on corrige si l'ordre est inversé)
+const ll=c=>c[0]>35?[c[1],c[0]]:[c[0],c[1]];
+function projector(lat0,lon0){const kx=111320*Math.cos(lat0*Math.PI/180),ky=110540;return{f:(lon,lat)=>[(lon-lon0)*kx,(lat-lat0)*ky],i:(x,y)=>[lat0+y/ky,lon0+x/kx]}}
+async function wfs(type,props,cql,label){
+  const out=[];
+  for(let start=0;start<40000;start+=5000){
+    const u=`https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=${type}&OUTPUTFORMAT=application/json&COUNT=5000&STARTINDEX=${start}&SORTBY=cleabs&PROPERTYNAME=${props}&CQL_FILTER=${encodeURIComponent(cql)}`;
+    const j=await getJSON(u);out.push(...j.features);
+    $("pStatus").textContent=`Téléchargement IGN : ${label} (${out.length.toLocaleString("fr")})…`;
+    if(j.features.length<5000)break;
+  }
+  return out;
+}
+// Index spatial des bords de polygones (cases de 200 m) pour mesurer vite la distance à la forêt ou à une haie
+function polyIndex(features,pr){
+  const cell=200,grid=new Map(),polys=[];
+  for(const f of features){
+    const g=f.geometry;if(!g)continue;
+    for(const poly of g.type==="Polygon"?[g.coordinates]:g.type==="MultiPolygon"?g.coordinates:[]){
+      const rings=poly.map(r=>r.map(c=>{const [lo,la]=ll(c);return pr.f(lo,la)}));
+      const bb=[Infinity,Infinity,-Infinity,-Infinity];
+      for(const [x,y] of rings[0]){bb[0]=Math.min(bb[0],x);bb[1]=Math.min(bb[1],y);bb[2]=Math.max(bb[2],x);bb[3]=Math.max(bb[3],y)}
+      const id=polys.push({rings,bb,nature:f.properties.nature})-1;
+      for(const r of rings)for(let k=1;k<r.length;k++){const a=r[k-1],b=r[k];
+        for(let i=Math.floor(Math.min(a[0],b[0])/cell);i<=Math.floor(Math.max(a[0],b[0])/cell);i++)
+          for(let j=Math.floor(Math.min(a[1],b[1])/cell);j<=Math.floor(Math.max(a[1],b[1])/cell);j++){
+            const key=i+","+j;let L0=grid.get(key);if(!L0)grid.set(key,L0=[]);L0.push(a,b)}}
+    }
+  }
+  return {grid,polys,cell};
+}
+function inRing(x,y,r){let c=false;for(let i=0,j=r.length-1;i<r.length;j=i++){const xi=r[i][0],yi=r[i][1],xj=r[j][0],yj=r[j][1];if((yi>y)!==(yj>y)&&x<(xj-xi)*(y-yi)/(yj-yi)+xi)c=!c}return c}
+function segD(px,py,a,b){const dx=b[0]-a[0],dy=b[1]-a[1],l=dx*dx+dy*dy;let t=l?((px-a[0])*dx+(py-a[1])*dy)/l:0;t=t<0?0:t>1?1:t;return Math.hypot(a[0]+t*dx-px,a[1]+t*dy-py)}
+function distTo(idx,x,y){
+  for(const p of idx.polys)if(x>=p.bb[0]&&x<=p.bb[2]&&y>=p.bb[1]&&y<=p.bb[3]&&inRing(x,y,p.rings[0]))return 0;
+  const ci=Math.floor(x/idx.cell),cj=Math.floor(y/idx.cell);let best=Infinity;
+  for(let r=0;r<=4;r++){
+    for(let i=ci-r;i<=ci+r;i++)for(let j=cj-r;j<=cj+r;j++){
+      if(Math.max(Math.abs(i-ci),Math.abs(j-cj))!==r)continue;
+      const L0=idx.grid.get(i+","+j);if(!L0)continue;
+      for(let k=0;k<L0.length;k+=2){const d=segD(x,y,L0[k],L0[k+1]);if(d<best)best=d}
+    }
+    if(best<=r*idx.cell)break;
+  }
+  return best;
+}
+function surfType(n,p,area){
+  n=n||"";const tmp=p==="Intermittent";
+  if(/orage/i.test(n))return"BO";
+  if(/^Mare/i.test(n))return tmp?"MT":(area>5000?"ET":"MP");
+  if(/Retenue|R.servoir|gravi/i.test(n)){if(area<800)return tmp?"MT":"MP";return tmp?"RI":"ET"}
+  if(/coulement/i.test(n))return"RP";
+  return tmp?"MT":"ET";
+}
+async function loadHabitat(c,R){
+  const key=c.lat.toFixed(3)+","+c.lon.toFixed(3)+","+R;
+  if(habCache.has(key))return habCache.get(key);
+  const dLa=R/110540,dLo=R/(111320*Math.cos(c.lat*Math.PI/180));
+  const bb=`BBOX(geometrie,${(c.lat-dLa).toFixed(5)},${(c.lon-dLo).toFixed(5)},${(c.lat+dLa).toFixed(5)},${(c.lon+dLo).toFixed(5)})`;
+  const surf=await wfs("BDTOPO_V3:surface_hydrographique","nature,persistance,geometrie",bb,"plans d'eau");
+  const tron=await wfs("BDTOPO_V3:troncon_hydrographique","nature,persistance,fosse,geometrie",bb,"cours d'eau");
+  const veg=await wfs("BDTOPO_V3:zone_de_vegetation","nature,geometrie",`(nature IN ('Bois','Haie','Peupleraie') OR nature LIKE 'For%') AND ${bb}`,"forêts et haies");
+  const h={surf,tron,veg};habCache.set(key,h);return h;
+}
+async function runProspect(s){
+  const pf=profOf(s.key);if(!pf)return;
+  $("prosp").disabled=true;$("pRes").innerHTML="";prospLayer.clearLayers();
+  const c=S.zone==="radius"&&S.center?S.center:{lat:map.getCenter().lat,lon:map.getCenter().lng};
+  const R=Math.min(S.zone==="radius"?+$("radius").value:5,5)*1000;
+  const h=await loadHabitat(c,R);
+  $("pStatus").textContent="Analyse des habitats…";await sleep(30);
+  const pr=projector(c.lat,c.lon);
+  const forest=polyIndex(h.veg.filter(f=>!/Haie/.test(f.properties.nature)),pr);
+  const hedge=polyIndex(h.veg.filter(f=>/Haie/.test(f.properties.nature)),pr);
+  const known=s.recs.filter(r=>!(r.unc>=1000)).map(r=>pr.f(r.lon,r.lat));
+  const vague=s.recs.filter(r=>r.unc>=1000).length;
+  // Candidats : chaque plan d'eau, plus des points tous les 300 m le long des ruisseaux si l'espèce s'y reproduit
+  const cand=[];
+  for(const f of h.surf){
+    const g=f.geometry;if(!g)continue;const polys=g.type==="Polygon"?[g.coordinates]:g.coordinates;
+    let area=0,sx=0,sy=0,n=0;
+    for(const poly of polys){const r=poly[0].map(q=>{const [lo,la]=ll(q);return pr.f(lo,la)});
+      for(let k=0,j=r.length-1;k<r.length;j=k++){area+=(r[j][0]*r[k][1]-r[k][0]*r[j][1])/2;sx+=r[k][0];sy+=r[k][1];n++}}
+    area=Math.abs(area);if(!n)continue;
+    const x=sx/n,y=sy/n;if(Math.hypot(x,y)>R)continue;
+    cand.push({x,y,type:surfType(f.properties.nature,f.properties.persistance,area),area,nature:f.properties.nature});
+  }
+  if(pf.water.RU||pf.water.RP){
+    let added=0;
+    for(const f of h.tron){
+      if(added>1500)break;const p=f.properties;if(/Conduit|buse|Aqueduc/i.test(p.nature||""))continue;
+      const type=p.persistance==="Intermittent"?"RU":"RP";if(!pf.water[type])continue;
+      const lines=f.geometry?.type==="LineString"?[f.geometry.coordinates]:f.geometry?.type==="MultiLineString"?f.geometry.coordinates:[];
+      for(const line of lines){let acc=150,prev=null;
+        for(const q of line){const [lo,la]=ll(q),pt=pr.f(lo,la);
+          if(prev){const d=Math.hypot(pt[0]-prev[0],pt[1]-prev[1]);acc+=d;
+            if(acc>=300&&Math.hypot(pt[0],pt[1])<=R){cand.push({x:pt[0],y:pt[1],type,area:0,nature:p.fosse?"Fossé":(p.nature||"Cours d'eau"),line:true});acc=0;added++}}
+          prev=pt}}
+    }
+  }
+  const res=[];
+  for(const k of cand){
+    const w=pf.water[k.type]||0;if(!w)continue;
+    const dF=distTo(forest,k.x,k.y),dH=distTo(hedge,k.x,k.y),dW=Math.min(dF,dH),why=[];
+    let sc=w/3*55;why.push(WATER[k.type]+(k.area?` (≈ ${k.area<10000?Math.round(k.area/10)*10+" m²":(k.area/10000).toFixed(1).replace(".",",")+" ha"})`:""));
+    const fmt=d=>d===0?"dedans":d===Infinity?"> 800 m":Math.round(d)+" m";
+    if(pf.terr==="foret"){sc+=dF<=30?25:dF<=150?18:dF<=400?8:0;why.push("forêt "+fmt(dF))}
+    else if(pf.terr==="bocage"){sc+=dW<=30?25:dW<=120?18:dW<=300?8:2;why.push((dH<dF?"haie ":"bois ")+fmt(dW))}
+    else if(pf.terr==="ouvert"){sc+=dF>300?20:dF>100?12:4;why.push(dF>300?"milieu ouvert":"forêt "+fmt(dF))}
+    else{sc+=dW<=100?18:10;why.push("bois ou haie "+fmt(dW))}
+    if(pf.fish&&k.type==="ET"){sc-=k.area>20000?22:12;why.push("risque de poissons")}
+    let kd=Infinity;for(const q of known){const d=Math.hypot(q[0]-k.x,q[1]-k.y);if(d<kd)kd=d}
+    let status="";
+    if(kd<=150){sc+=15;status="connu"}
+    else if(kd<=pf.disp*1000){sc+=5+10*(1-kd/(pf.disp*1000));why.push(`donnée connue à ${(kd/1000).toFixed(1).replace(".",",")} km`)}
+    const [lat,lon]=pr.i(k.x,k.y);
+    res.push({lat,lon,type:k.type,score:Math.round(Math.max(0,Math.min(100,sc))),why,status,nature:k.nature,dist:Math.hypot(k.x,k.y)});
+  }
+  // Ne garder qu'un point par tronçon de 250 m pour les ruisseaux (évite les doublons)
+  res.sort((a,b)=>b.score-a.score);
+  const kept=[];for(const r of res){if(kept.some(q=>q.type===r.type&&(r.type==="RU"||r.type==="RP")&&Math.hypot((q.lat-r.lat)*110540,(q.lon-r.lon)*78000)<250))continue;kept.push(r)}
+  lastProsp=kept;showProspect(s,pf,kept,R,vague,h);
+}
+function cls(sc){return sc>=70?1:sc>=50?2:3}
+function showProspect(s,pf,list,R,vague,h){
+  const nC=list.filter(r=>r.status==="connu").length,n1=list.filter(r=>cls(r.score)===1&&!r.status).length,n2=list.filter(r=>cls(r.score)===2&&!r.status).length;
+  $("pStatus").innerHTML=`<b>${list.length}</b> milieux aquatiques compatibles dans ${R/1000} km : <b>${n1}</b> très favorables et <b>${n2}</b> favorables à visiter, <b>${nC}</b> déjà connu${nC>1?"s":""} pour l'espèce.`+
+    (vague?` <span>${vague} donnée${vague>1?"s":""} floutée${vague>1?"s":""} non prise${vague>1?"s":""} en compte pour la proximité.</span>`:"")+
+    (/ornière|flaque/i.test(pf.ou)?" <span class=\"warn\">Les ornières et flaques ne sont pas cartographiées : prospecte aussi les chemins.</span>":"");
+  const cols={1:css("--sun"),2:"#2b7bd6",3:"#8a9a94"};
+  [...list].reverse().forEach((r,i)=>{
+    const c=cls(r.score),m=L.circleMarker([r.lat,r.lon],{radius:r.status?6:c===1?8:c===2?6.5:4.5,color:r.status?"#0e5c4d":"#1a1a05",weight:r.status?2.5:1,fillColor:r.status?"#ffffff":cols[c],fillOpacity:.95,bubblingMouseEvents:false});
+    m.bindPopup(()=>`<b>${r.status?"Site connu":["","Très favorable","Favorable","Possible"][c]}</b> · score <span class="mono">${r.score}</span><br>${esc(r.nature||"")}<br>${r.why.map(esc).join("<br>")}<br>
+      <a href="https://www.google.com/maps/dir/?api=1&destination=${r.lat.toFixed(6)},${r.lon.toFixed(6)}" target="_blank" rel="noopener">Itinéraire</a> · <a href="https://www.geoportail.gouv.fr/carte?c=${r.lon.toFixed(6)},${r.lat.toFixed(6)}&z=17&l0=ORTHOIMAGERY.ORTHOPHOTOS::GEOPORTAIL:OGC:WMTS(1)&permalink=yes" target="_blank" rel="noopener">Photo aérienne</a>`,{maxWidth:250});
+    m.addTo(prospLayer)});
+  const box=$("pRes");
+  box.innerHTML=`<div class="prow"><button class="btn" id="pHab" aria-pressed="false">Afficher les habitats</button><button class="btn" id="pGpx">Points GPX</button></div>
+    <div class="key" style="margin:6px 0"><span><i class="dot s"></i>très favorable</span><span><i class="dot" style="background:#2b7bd6"></i>favorable</span><span><i class="dot" style="background:#8a9a94"></i>possible</span><span><i class="dot" style="background:#fff;border:2px solid #0e5c4d"></i>déjà connu</span></div>`;
+  list.filter(r=>!r.status).slice(0,15).forEach((r,i)=>{
+    const b=document.createElement("button");b.className="pr";
+    b.innerHTML=`<span class="rk">${i+1}</span><span>${esc(WATER[r.type])} <small style="color:var(--muted)">· ${(r.dist/1000).toFixed(1).replace(".",",")} km</small></span><span class="score c${cls(r.score)}">${r.score}</span><span class="why">${esc(r.why.slice(1).join(" · "))}</span>`;
+    b.onclick=()=>{if(isMobile())setSheet("peek");map.setView([r.lat,r.lon],16);prospLayer.eachLayer(l=>{const p=l.getLatLng();if(p.lat===r.lat&&p.lng===r.lon)l.openPopup()})};
+    box.appendChild(b)});
+  $("pGpx").onclick=()=>save(`prospection_${s.name.replace(/\W+/g,"_").toLowerCase()}.gpx`,"application/gpx+xml",`<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Carnet de prospection" xmlns="http://www.topografix.com/GPX/1/1">\n`+
+    list.filter(r=>!r.status&&cls(r.score)<3).map((r,i)=>`<wpt lat="${r.lat.toFixed(6)}" lon="${r.lon.toFixed(6)}"><name>${i+1}. ${esc(WATER[r.type])} (${r.score})</name><desc>${esc(r.why.join(" · "))}</desc></wpt>`).join("\n")+"\n</gpx>");
+  $("pHab").onclick=()=>{
+    const on=$("pHab").getAttribute("aria-pressed")!=="true";$("pHab").setAttribute("aria-pressed",on);
+    if(!on){map.removeLayer(habLayer);return}
+    habLayer.clearLayers();
+    const opt=st=>({style:st,interactive:false,coordsToLatLng:c=>{const [lo,la]=ll(c);return L.latLng(la,lo)}});
+    L.geoJSON({type:"FeatureCollection",features:h.veg},opt(f=>/Haie/.test(f.properties.nature)?{color:"#3f8f3f",weight:1,fillOpacity:.45,fillColor:"#3f8f3f"}:{color:"#2f6b2f",weight:.6,fillColor:"#57a55a",fillOpacity:.25})).addTo(habLayer);
+    L.geoJSON({type:"FeatureCollection",features:h.tron},opt(f=>({color:"#1d6fe0",weight:f.properties.persistance==="Intermittent"?1.2:2,dashArray:f.properties.persistance==="Intermittent"?"4 3":null}))).addTo(habLayer);
+    L.geoJSON({type:"FeatureCollection",features:h.surf},opt(f=>({color:"#1d6fe0",weight:1,fillColor:f.properties.persistance==="Intermittent"?"#7fb7ff":"#1d6fe0",fillOpacity:.6}))).addTo(habLayer);
+    habLayer.addTo(map);prospLayer.eachLayer(l=>l.bringToFront());
+  };
+  if(isMobile())setSheet("half");
+  const b=L.latLngBounds(list.map(r=>[r.lat,r.lon]));if(b.isValid())map.fitBounds(b,fitOpts());
+  $("prosp").disabled=false;$("prosp").textContent="Relancer l'analyse";
 }
 
 /* ============ Démarrage ============ */
